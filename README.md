@@ -8,6 +8,10 @@ a) segmentation and normalization:
 b) human-driven BSIF-based iris pattern encoding:
 > Adam Czajka, Daniel Moreira, Kevin W. Bowyer, Patrick Flynn, “Domain-Specific Human-Inspired Binarized Statistical Image Features for Iris Recognition,” The IEEE Winter Conference on Applications of Computer Vision, Waikoloa Village, Hawaii, January 7-11, 2019; pre-print: https://arxiv.org/abs/1807.05248
 
+# How to
+
+Simply run / analyze `howto.m` (Matlab) and `howto.py` (Python) to have fun.
+
 # License
 
 This is a research open-source software. You are free to use it in your research projects. Please discuss individual licensing options if you want to use this software for commercial purposes, or to create and distribute closed source versions.
