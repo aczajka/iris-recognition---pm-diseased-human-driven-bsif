@@ -1,6 +1,6 @@
 # Iris recognition designed for post-mortem and diseased eyes
 
-This sample demonstrates how to combine selected efforts aimed at delivering effective iris recognition methods for diseased eyes and post-mortem samples (collected after death). The following codes and models were merged here into a complete iris recognition software package:
+This software package demonstrates how to combine selected efforts aimed at delivering effective iris recognition methods for diseased eyes and post-mortem samples (collected after death). The following codes and models were merged here into a complete iris recognition software package:
 
 a) segmentation and normalization:
 > Mateusz Trokielewicz, Adam Czajka, Piotr Maciejewicz, “Post-mortem iris recognition with deep learning-based image segmentation,” Image and Vision Computing, Vol. 94 (103866), Feb. 2020, pp. 1-11; pre-print: https://arxiv.org/abs/1901.01708
