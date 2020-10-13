@@ -10,7 +10,7 @@ b) human-driven BSIF-based iris pattern encoding:
 
 # How to
 
-Simply run / analyze `howto.m` (tested with Matlab 2019b) and `howto.py` (Python) to have fun.
+Simply run / analyze `howto.m` (tested with Matlab 2019b) to have fun.
 
 # License
 
