@@ -17,12 +17,12 @@ MASK = bwareafilt(MASK, 1);
 % Crop the image to the blob to estimate the iris size
 MASK_CROPPED = cropmat(MASK, MASK);
 
-if ~isempty(MASK_CROPPED)
+if bwarea(MASK) > 64
     
     IRIS_RADIUS_ESTIMATE = round(max(size(MASK_CROPPED))/2); % use larger of the sizes
     
     % Create the iris radius search range for Hough transform
-    SEARCH_RANGE_I = [(IRIS_RADIUS_ESTIMATE - lower_margin_iris) (IRIS_RADIUS_ESTIMATE + upper_margin_iris)];
+    SEARCH_RANGE_I = [max(1,(IRIS_RADIUS_ESTIMATE - lower_margin_iris)) (IRIS_RADIUS_ESTIMATE + upper_margin_iris)];
     
     % Estimate the outer iris circle with Hough
     [IRIS_CENTERS, IRIS_RADII, ~] = imfindcircles(MASK, SEARCH_RANGE_I, 'ObjectPolarity', 'bright', 'Sensitivity', 0.99);
@@ -51,7 +51,7 @@ if ~isempty(MASK_CROPPED)
     MASK_CROPPED_INVERSE = logical(1 - MASK_CROPPED);
     
     % Crop 5% from each side of the image to close most openings
-    CROP = round(0.05 * max(size(MASK_CROPPED_INVERSE)));
+    CROP = max(1,round(0.05 * max(size(MASK_CROPPED_INVERSE))));
     MASK_CROPPED_INVERSE = MASK_CROPPED_INVERSE(CROP:end-CROP, CROP:end-CROP);
     
     % Locate centroids
@@ -114,7 +114,7 @@ else
     irisData.xCirclePoints = 0;
     irisData.yCirclePoints = 0;
     
-    status = 'empty mask';
+    status = 'mask too small';
     
 end
 

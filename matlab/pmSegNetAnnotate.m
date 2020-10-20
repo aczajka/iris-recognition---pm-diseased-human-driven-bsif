@@ -25,7 +25,7 @@ end
 
 image = double(imresize(image,[480 640],'bicubic'));
 
-annotatedImage = double(0.8*image);
+annotatedImage = double(image);
 annotatedImage(:,:,1) = min(255,annotatedImage(:,:,1) + 0.4*255*double(mask));
 annotatedImage(:,:,2) = min(255,annotatedImage(:,:,2) + 0.4*255*double(mask));
 

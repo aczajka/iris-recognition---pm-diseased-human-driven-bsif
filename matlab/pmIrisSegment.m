@@ -3,9 +3,6 @@
 %    mask = pmIrisSegment(image,net) calculates binary mask
 %    indicating iris (white mask elements) and non-iris (black mask pixels)
 %    areas for an input iris image 'image', using the SegNet model 'net'.
-% 
-%    [mask,pupilBoundary,irisBoundary] = pmIrisSegment(image,net) returns
-%    additionally circular approximations of the pupil and the iris.
 %
 %    Input:
 %    image     - iris image, preferably compliant with ISO/IEC 19794-6

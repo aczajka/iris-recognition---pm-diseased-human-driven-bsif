@@ -5,17 +5,17 @@
 % The following codes and models were merged here into a complete iris
 % recognition software package:
 %
-% a) segmentation and normalization: 
-%    Mateusz Trokielewicz, Adam Czajka, Piotr Maciejewicz, ?Post-mortem 
-%    iris recognition with deep learning-based image segmentation,? Image 
+% a) segmentation and normalization:
+%    Mateusz Trokielewicz, Adam Czajka, Piotr Maciejewicz, ?Post-mortem
+%    iris recognition with deep learning-based image segmentation,? Image
 %    and Vision Computing, Vol. 94 (103866), Feb. 2020, pp. 1-11;
 %    pre-print: https://arxiv.org/abs/1901.01708
 %
 % b) human-driven BSIF-based iris pattern encoding:
-%    Adam Czajka, Daniel Moreira, Kevin W. Bowyer, Patrick Flynn, 
+%    Adam Czajka, Daniel Moreira, Kevin W. Bowyer, Patrick Flynn,
 %    ?Domain-Specific Human-Inspired Binarized Statistical Image Features
-%    for Iris Recognition,? The IEEE Winter Conference on Applications 
-%    of Computer Vision, Waikoloa Village, Hawaii, January 7-11, 2019; 
+%    for Iris Recognition,? The IEEE Winter Conference on Applications
+%    of Computer Vision, Waikoloa Village, Hawaii, January 7-11, 2019;
 %    pre-print: https://arxiv.org/abs/1807.05248
 % _________________________________________________________________________
 % Adam Czajka, October 2020, aczajka@nd.edu
@@ -72,17 +72,22 @@ for i = 1:uniqueFilesL
     
     % step 2: circular approximation and normalization
     [pupilData, irisData, status] = pmIrisCircApprox(maskCoarse,image);
-    [imagePol,maskPol] = pmIrisCartesianToPolar(image,maskFine,pupilData,irisData);
     
-    % write results, if needed:
-    imwrite(maskCoarse,[DIR_IMAGES_PROCESSED filePath(1:end-4) '_seg_coarse_mask.png'],'png');
-    imwrite(maskFine,[DIR_IMAGES_PROCESSED filePath(1:end-4) '_seg_fine_mask.png'],'png');
-    annotatedImage = pmSegNetAnnotate(image,maskFine,pupilData,irisData);
-    imwrite(annotatedImage,[DIR_IMAGES_PROCESSED filePath(1:end-4) '_seg_vis.png'],'png');
-    
-    % step 3: feature extraction
-    codePol = pmIrisBSIFCode(imagePol,ICAtextureFilters);
-    save([DIR_TEMPLATES filePath(1:end-4) '_tmpl.mat'],'maskPol','codePol');
+    if strcmp(status,'OK')
+        [imagePol,maskPol] = pmIrisCartesianToPolar(image,maskFine,pupilData,irisData);
+        
+        % write results, if needed:
+        imwrite(maskCoarse,[DIR_IMAGES_PROCESSED filePath(1:end-4) '_seg_coarse_mask.png'],'png');
+        imwrite(maskFine,[DIR_IMAGES_PROCESSED filePath(1:end-4) '_seg_fine_mask.png'],'png');
+        annotatedImage = pmSegNetAnnotate(image,maskFine,pupilData,irisData);
+        imwrite(annotatedImage,[DIR_IMAGES_PROCESSED filePath(1:end-4) '_seg_vis.png'],'png');
+        
+        % step 3: feature extraction
+        codePol = pmIrisBSIFCode(imagePol,ICAtextureFilters);
+        save([DIR_TEMPLATES filePath(1:end-4) '_tmpl.mat'],'maskPol','codePol');
+    else
+        imwrite(image,[DIR_IMAGES_PROCESSED filePath(1:end-4) '_seg_vis.png'],'png');
+    end
     
 end
 
@@ -96,20 +101,29 @@ f = fopen(compListScores,'w+');
 
 for i=1:compListH
     
-    % code / mask #1
-    load([DIR_TEMPLATES compList.file1{i}(1:end-4) '_tmpl.mat']);
-    code1 = codePol;
-    mask1 = maskPol;
+    f1 = [DIR_TEMPLATES compList.file1{i}(1:end-4) '_tmpl.mat'];
+    f2 = [DIR_TEMPLATES compList.file2{i}(1:end-4) '_tmpl.mat'];
     
-    % code / mask #2
-    load([DIR_TEMPLATES compList.file2{i}(1:end-4) '_tmpl.mat']);
-    code2 = codePol;
-    mask2 = maskPol;
-    
-    score = pmIrisBSIFMatch(code1,code2,mask1,mask2,l);
-    
-    fprintf(f,[compList.file1{i} ' ' compList.file2{i} ' ' num2str(score) '\n']);
-    disp([compList.file1{i} ' <> ' compList.file2{i} ' = ' num2str(score)])
+    if exist(f1,'file') && exist(f2,'file')
+        
+        % code / mask #1
+        load(f1);
+        code1 = codePol;
+        mask1 = maskPol;
+        
+        % code / mask #2
+        load(f2);
+        code2 = codePol;
+        mask2 = maskPol;
+        
+        score = pmIrisBSIFMatch(code1,code2,mask1,mask2,l);
+        
+        fprintf(f,[compList.file1{i} ' ' compList.file2{i} ' ' num2str(score) '\n']);
+        disp([compList.file1{i} ' <> ' compList.file2{i} ' = ' num2str(score)])
+        
+    else
+        fprintf(f,[compList.file1{i} ' ' compList.file2{i} ' -1.0\n']);
+    end
     
 end
 
