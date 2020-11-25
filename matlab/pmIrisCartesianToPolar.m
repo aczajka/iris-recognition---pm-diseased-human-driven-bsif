@@ -15,9 +15,10 @@ for j = 1:POL_W
         y = round((1-radius) * pupilData.yCirclePoints(j) + radius * irisData.yCirclePoints(j));
 
         % make sure the coordinates are not outside the image
-        [maxh, maxw] = size(image);
-        x = min(max(x,1),maxw);
-        y = min(max(y,1),maxh);
+        if (x > 0 && x <= imW && y > 0 && y <= imH)
+            IMAGE_POL(i,j) = IMAGE(y,x);
+            MASK_POL(i,j) = 255*MASK(y,x);
+        end
 
         IMAGE_POL(i,j) = IMAGE(y,x);
         MASK_POL(i,j) = 255*MASK(y,x);
