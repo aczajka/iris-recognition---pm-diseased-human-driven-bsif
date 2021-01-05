@@ -71,7 +71,7 @@ for i = 1:uniqueFilesL
     maskFine = pmIrisSegment(image, modelFine);
     
     % step 2: circular approximation and normalization
-    [pupilData, irisData, status] = pmIrisCircApprox(maskCoarse,image);
+    [pupilData, irisData, status] = pmIrisCircApprox(maskCoarse);
     
     if strcmp(status,'OK')
         [imagePol,maskPol] = pmIrisCartesianToPolar(image,maskFine,pupilData,irisData);
