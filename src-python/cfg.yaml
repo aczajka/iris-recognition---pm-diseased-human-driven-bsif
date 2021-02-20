@@ -1,0 +1,25 @@
+#######################################################
+# Segmentation settings
+#######################################################
+ccnet_model_path: "../models/CCNet_epoch_260_NIRRGBmixed_adam.pth"
+cuda: ""
+gpu: ""
+iris_hough_param1: 30
+iris_hough_param2: 5
+iris_hough_lowermargin: 5
+iris_hough_uppermargin: 10
+pupil_hough_param1: 30
+pupil_hough_param2: 5
+pupil_hough_minimum: 13
+pupil_hough_margin: 10
+max_separation: 15
+
+#######################################################
+# Iris coding
+#######################################################
+polar_height: 64
+polar_width: 512
+recog_filter_size: 15
+recog_num_filters: 7
+recog_max_shift: 16
+recog_bsif_dir: "../filters/finetuned_bsif_eyetracker_data/"
