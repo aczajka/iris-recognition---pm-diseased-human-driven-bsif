@@ -26,9 +26,9 @@ close all
 %% Housekeeping
 
 % where various things live:
-DIR_IMAGES_TO_PROCESS = './data/';
-DIR_IMAGES_PROCESSED = './dataProcessed/';
-DIR_BSIF_FILTERS = './filters/';
+DIR_IMAGES_TO_PROCESS = '../data/';
+DIR_IMAGES_PROCESSED = '../dataProcessed/';
+DIR_BSIF_FILTERS = '../filters/';
 DIR_TEMPLATES = './templates/';
 
 % Domain-specific BSIF kernel bank (based on WACV 2019 experiments / paper):
@@ -44,9 +44,9 @@ compListScores = 'imageListScores.txt';
 
 % segmentation models:
 disp('Loading segmentation models ...')
-load('./SegNetWarmPostmortemDiseaseCoarse-MTPhD.mat')
+load('../models/SegNetWarmPostmortemDiseaseCoarse-MTPhD.mat')
 modelCoarse = net;
-load('./SegNetWarmPostmortemDiseaseFine-MTPhD.mat')
+load('../models/SegNetWarmPostmortemDiseaseFine-MTPhD.mat')
 modelFine = net;
 clear net
 
