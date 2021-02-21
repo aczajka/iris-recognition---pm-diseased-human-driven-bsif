@@ -9,6 +9,7 @@ from torch.autograd import Variable
 from torchvision.transforms import Compose
 from torchvision.transforms import ToTensor
 from PIL import Image
+from skimage import img_as_bool
 
 class irisRecognition(object):
     def __init__(self, cfg):
@@ -58,7 +59,8 @@ class irisRecognition(object):
 
     def segment(self,image):
 
-        image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE)
+        w,h = image.size
+        image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_CUBIC)
 
         outputs = self.model(Variable(self.input_transform(image).unsqueeze(0)))
         logprob = self.softmax(outputs).data.cpu().numpy()
@@ -82,6 +84,9 @@ class irisRecognition(object):
             pred[output == max_label] = 255
             pred = np.asarray(pred, dtype=np.uint8)
         '''
+
+        # Resize the mask to the original image size
+        pred = img_as_bool(cv2.resize(np.array(pred), (w,h), cv2.INTER_NEAREST))
 
         return pred
 

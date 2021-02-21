@@ -9,9 +9,13 @@ def main(cfg):
 
     irisRec = irisRecognition(cfg)
 
-    # Get images to process
     image_list = []
     filename_list = []
+    mask_list = []
+    polar_list = []
+
+    # Get images to process
+    
     for filename in glob.glob("../data/*.bmp"):
         print(filename)
         im = Image.open(filename)
@@ -22,7 +26,14 @@ def main(cfg):
     for im,fn in zip(image_list,filename_list):
         mask = irisRec.segment(im)
         im_mask = Image.fromarray(mask)
-        im_mask.save("../dataProcessed/" + fn + "_seg_CCNet_mask.png")
+        mask_list.append(im_mask)
+        im_mask.save("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_CCNet_mask.png")
+
+    # Cartesian to polar
+
+    # Coding
+
+
 
     return None
 
