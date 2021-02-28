@@ -99,6 +99,14 @@ class irisRecognition(object):
         return pred
 
 
+    def segmentVis(self,im,mask,pupil_xyr,iris_xyr):
+
+        imVis = np.stack((np.array(im),)*3, axis=-1)
+        imVis[:,:,1] = np.clip(imVis[:,:,1] + 96*mask,0,255)
+        imVis = cv2.circle(imVis, (pupil_xyr[0],pupil_xyr[1]), pupil_xyr[2], (0, 0, 255), 2)
+        imVis = cv2.circle(imVis, (iris_xyr[0],iris_xyr[1]), iris_xyr[2], (255, 0, 0), 2)
+
+        return imVis
 
     def circApprox(self,mask):
 

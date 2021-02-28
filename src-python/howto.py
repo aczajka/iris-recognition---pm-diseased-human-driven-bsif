@@ -16,34 +16,32 @@ def main(cfg):
     mask_list = []
     polar_list = []
 
-    # Get images to process
-    
+    # Get the list of images to process
     for filename in glob.glob("../data/*.bmp"):
         print(filename)
         im = Image.open(filename)
         image_list.append(im)
         filename_list.append(os.path.basename(filename))
 
-    # Segment
+    # Segmentation, normalization and encoding
     for im,fn in zip(image_list,filename_list):
+        
+        # segmentation mask: 
         mask = irisRec.segment(im)
-
-        pupil_xyr, iris_xyr = irisRec.circApprox(mask)
-
-        im = np.array(im)
-        im = cv2.circle(im, (pupil_xyr[0],pupil_xyr[1]), pupil_xyr[2], (0, 255, 0), 2)
-        im = cv2.circle(im, (iris_xyr[0],iris_xyr[1]), iris_xyr[2], (255, 0, 0), 2)
-        cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_CCNet_vis.png",im)
-        print(pupil_xyr, iris_xyr)
-
         im_mask = Image.fromarray(mask)
         mask_list.append(im_mask)
+        
+        # circular approximation:
+        pupil_xyr, iris_xyr = irisRec.circApprox(mask)
+
+        # cartesian to polar transformation:
+
+        # DEBUG: save selected processing results 
         im_mask.save("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_CCNet_mask.png")
+        imVis = irisRec.segmentVis(im,mask,pupil_xyr,iris_xyr)
+        cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_CCNet_vis.png",imVis)
 
-    # Cartesian to polar
-
-
-    # Coding
+        # human-driven BSIF encoding:
 
 
 

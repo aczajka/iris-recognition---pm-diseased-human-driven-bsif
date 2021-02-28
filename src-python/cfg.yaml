@@ -10,8 +10,8 @@ iris_hough_margin: 32
 pupil_hough_param1: 30
 pupil_hough_param2: 5
 pupil_hough_minimum: 12
-pupil_iris_max_ratio: 0.8
-max_pupil_iris_shift: 15
+pupil_iris_max_ratio: 0.7
+max_pupil_iris_shift: 25
 
 #######################################################
 # Iris coding
