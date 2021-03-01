@@ -10,17 +10,18 @@ from torchvision.transforms import Compose
 from torchvision.transforms import ToTensor
 from PIL import Image
 from skimage import img_as_bool
+from math import pi
 
 class irisRecognition(object):
     def __init__(self, cfg):
 
         # cParsing the config file
-        self.height = cfg["polar_height"]
-        self.width = cfg["polar_width"]
-        self.angles = angles = np.arange(0, 2 * np.pi, 2 * np.pi / self.width)
-        self.cos_angles = np.zeros((self.width))
-        self.sin_angles = np.zeros((self.width))
-        for i in range(self.width):
+        self.polar_height = cfg["polar_height"]
+        self.polar_width = cfg["polar_width"]
+        self.angles = angles = np.arange(0, 2 * np.pi, 2 * np.pi / self.polar_width)
+        self.cos_angles = np.zeros((self.polar_width))
+        self.sin_angles = np.zeros((self.polar_width))
+        for i in range(self.polar_width):
             self.cos_angles[i] = np.cos(self.angles[i])
             self.sin_angles[i] = np.sin(self.angles[i])
         self.filter_size = cfg["recog_filter_size"]
@@ -149,24 +150,33 @@ class irisRecognition(object):
 
 
     # Rubbersheet model-based Cartesian-to-polar transformation
-    def cartToPol(self, image, cx, cy, pupil_r, iris_r):
+    def cartToPol(self, image, mask, pupil_xyr, iris_xyr):
        
-        polar = np.zeros((self.height, self.width), np.uint8)
+        image = np.array(image)
+        height, width = image.shape
+        mask = np.array(mask)
 
-        for j in range(self.height):
-            rad = j /self.height
+        image_polar = np.zeros((self.polar_height, self.polar_width), np.uint8)
+        mask_polar = np.zeros((self.polar_height, self.polar_width), np.uint8)
 
-            x_lowers = cx + pupil_r * self.cos_angles
-            y_lowers = cy + pupil_r * self.sin_angles
-            x_uppers = cx + iris_r * self.cos_angles
-            y_uppers = cy + iris_r * self.sin_angles
+        theta = 2*pi*np.linspace(1,self.polar_width,self.polar_width)/self.polar_width
+        pxCirclePoints = pupil_xyr[0] + pupil_xyr[2]*np.cos(theta)
+        pyCirclePoints = pupil_xyr[1] + pupil_xyr[2]*np.sin(theta)
+        
+        ixCirclePoints = iris_xyr[0] + iris_xyr[2]*np.cos(theta)
+        iyCirclePoints = iris_xyr[1] + iris_xyr[2]*np.sin(theta)
 
-            Xc = (1 - rad) * x_lowers + rad * x_uppers
-            Yc = (1 - rad) * y_lowers + rad * y_uppers
+        radius = np.linspace(0,self.polar_height,self.polar_height)/self.polar_height
+        for j in range(self.polar_width):
+            x = (np.clip(0,width-1,np.around((1-radius) * pxCirclePoints[j] + radius * ixCirclePoints[j]))).astype(int)
+            y = (np.clip(0,height-1,np.around((1-radius) * pyCirclePoints[j] + radius * iyCirclePoints[j]))).astype(int)
+            
+            for i in range(self.polar_height):
+                if (x[i] > 0 and x[i] < width and y[i] > 0 and y[i] < height): 
+                    image_polar[i][j] = image[y[i]][x[i]]
+                    mask_polar[i][j] = 255*mask[y[i]][x[i]]
 
-            polar[j, :] = image[Xc.astype(int), Yc.astype(int)]
-
-        return polar
+        return image_polar, mask_polar
 
 
     # Iris code
@@ -174,7 +184,7 @@ class irisRecognition(object):
         
         # Wrap image
         r = int(np.floor(self.filter_size / 2));
-        imgWrap = np.zeros((r*2+self.height, r*2+self.width))
+        imgWrap = np.zeros((r*2+self.polar_height, r*2+self.polar_width))
         imgWrap[:r, :r] = polar[-r:, -r:]
         imgWrap[:r, r:-r] = polar[-r:, :]
         imgWrap[:r, -r:] = polar[-r:, :r]
@@ -188,7 +198,7 @@ class irisRecognition(object):
         imgWrap[-r:, -r:] = polar[:r, :r]
 
         # Loop over all BSIF kernels in the filter set
-        codeBinary = np.zeros((self.height, self.width, self.num_filters))
+        codeBinary = np.zeros((self.polar_height, self.polar_width, self.num_filters))
         for i in range(1,self.num_filters+1):
             ci = scipy.signal.convolve2d(imgWrap, np.rot90(self.filter[:,:,self.num_filters-i],2), mode='valid')
             codeBinary[:,:,i-1] = ci>0
