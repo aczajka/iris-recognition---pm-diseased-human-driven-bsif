@@ -207,7 +207,13 @@ class irisRecognition(object):
 
     # Match iris codes
     def matchCodes(self, code1, code2, mask1, mask2):
+        
         margin = int(np.ceil(self.filter_size/2))
+        code1 = np.array(code1)
+        code2 = np.array(code2)
+        mask1 = np.array(mask1)
+        mask2 = np.array(mask2)
+        
         self.code1 = code1[margin:-margin, :, :]
         self.code2 = code2[margin:-margin, :, :]
         self.mask1 = mask1[margin:-margin, :]

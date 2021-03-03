@@ -20,9 +20,8 @@ def main(cfg):
         filename_list.append(os.path.basename(filename))
 
     # Segmentation, normalization and encoding
-    mask_list = []
+    polar_mask_list = []
     code_list = []
-
     for im,fn in zip(image_list,filename_list):
         
         print(fn)
@@ -30,17 +29,17 @@ def main(cfg):
         # segmentation mask: 
         mask = irisRec.segment(im)
         im_mask = Image.fromarray(mask)
-        mask_list.append(im_mask)
         
         # circular approximation:
         pupil_xyr, iris_xyr = irisRec.circApprox(mask)
 
         # cartesian to polar transformation:
         im_polar, mask_polar = irisRec.cartToPol(im, mask, pupil_xyr, iris_xyr)
+        polar_mask_list.append(mask_polar)
 
         # human-driven BSIF encoding:
-        #code = irisRec.extractCode(im_polar)
-        #code_list.append(code)
+        code = irisRec.extractCode(im_polar)
+        code_list.append(code)
 
         # DEBUG: save selected processing results 
         im_mask.save("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_CCNet_mask.png")
@@ -48,9 +47,14 @@ def main(cfg):
         cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_CCNet_vis.png",imVis)
         cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_im_polar_CCNet.png",im_polar)
         cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_mask_polar_CCNet.png",mask_polar)
-       
-
-
+        np.savez_compressed("./templates/" + os.path.splitext(fn)[0] + "_tmpl.npz",code)
+        
+    # Matching (all-vs-all, as an example)
+    for code1,mask1,fn1,i in zip(code_list,polar_mask_list,filename_list,range(len(code_list))):
+        for code2,mask2,fn2,j in zip(code_list,polar_mask_list,filename_list,range(len(code_list))):
+            if i < j:
+                score = irisRec.matchCodes(code1, code2, mask1, mask2)
+                print("{} <-> {} : {}".format(fn1,fn2,score))
 
     return None
 
