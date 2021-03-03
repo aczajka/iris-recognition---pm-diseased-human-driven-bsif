@@ -19,7 +19,13 @@ c) human-driven BSIF-based iris pattern encoding:
 Simply run / analyze `howto.m` (tested with Matlab 2019b -- 2020b) to have fun.
 
 ## Python: 
-(comming soon)
+1. Install dependecies:
+
+```bash
+conda env create -f ccnet.yaml
+```
+
+2. Run / analyze `howto.py`, which - as an example - encodes and matches three post-mortem samples from thw Warsaw dataset.
 
 # License
 
