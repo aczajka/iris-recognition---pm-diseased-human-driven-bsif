@@ -53,8 +53,11 @@ def main(cfg):
     for code1,mask1,fn1,i in zip(code_list,polar_mask_list,filename_list,range(len(code_list))):
         for code2,mask2,fn2,j in zip(code_list,polar_mask_list,filename_list,range(len(code_list))):
             if i < j:
-                score = irisRec.matchCodes(code1, code2, mask1, mask2)
-                print("{} <-> {} : {}".format(fn1,fn2,score))
+                score, shift = irisRec.matchCodes(code1, code2, mask1, mask2)
+                print("{} <-> {} : {:.3f} (mutual rot: {:.2f} deg)".format(fn1,fn2,score,360*shift/irisRec.polar_width))
+
+                b = irisRec.visualizeMatchingResult(code1, code2, mask1, mask2, shift)
+                cv2.imwrite("../dataProcessed/" + os.path.splitext(fn1)[0] + "_" + os.path.splitext(fn2)[0] + "_b.png",b)
 
     return None
 

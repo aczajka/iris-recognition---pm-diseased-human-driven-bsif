@@ -226,6 +226,20 @@ class irisRecognition(object):
             xorCodesMasked = np.logical_and(xorCodes, np.tile(np.expand_dims(andMasks,axis=2),self.num_filters))
             scoreC[:,shift] = np.sum(xorCodesMasked, axis=(0,1)) / np.sum(andMasks)
 
-        scoreC = np.min(np.mean(scoreC, axis=0))
+        scoreMean = np.mean(scoreC, axis=0)
+        scoreC = np.min(scoreMean)
+        scoreC_shift = np.argmin(scoreMean)-self.max_shift
 
-        return scoreC
+        return scoreC, scoreC_shift
+    
+    def visualizeMatchingResult(self, code1, code2, mask1, mask2, shift):
+
+        xorCodes = np.logical_xor(self.code1, np.roll(self.code2, shift, axis=1))
+        andMasks = np.logical_and(self.mask1, np.roll(self.mask2, shift, axis=1))
+
+        heatMap = 1-xorCodes.astype(int)
+        heatMap = np.pad(np.mean(heatMap,axis=2), pad_width=((8,8),(0,0)), mode='constant', constant_values=0)
+        andMasks = np.pad(andMasks, pad_width=((8,8),(0,0)), mode='constant', constant_values=0)
+        heatMap = 255 * heatMap * andMasks
+
+        return heatMap
