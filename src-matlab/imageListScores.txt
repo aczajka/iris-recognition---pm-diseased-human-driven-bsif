@@ -1,3 +1,0 @@
-cL.jpg cR.jpg 0.48009
-wL.jpg wR.jpg 0.4444
-rL.jpg rR.jpg 0.39785

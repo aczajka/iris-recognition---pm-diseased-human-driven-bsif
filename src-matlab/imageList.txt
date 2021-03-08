@@ -1,4 +1,4 @@
 file1 file2
-cL.jpg cR.jpg
-wL.jpg wR.jpg
-rL.jpg rR.jpg
+0002_L_2_1.bmp 0002_L_3_1.bmp
+0002_L_2_1.bmp 0017_L_7_4.bmp
+0002_L_3_1.bmp 0017_L_7_4.bmp

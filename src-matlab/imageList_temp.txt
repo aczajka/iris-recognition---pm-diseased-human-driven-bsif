@@ -1,4 +1,0 @@
-file1 file2
-cL.jpg cR.jpg
-wL.jpg wR.jpg
-rL.jpg rR.jpg
