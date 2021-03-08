@@ -10,6 +10,7 @@ from torchvision.transforms import Compose
 from torchvision.transforms import ToTensor
 from PIL import Image
 from skimage import img_as_bool
+import math
 from math import pi
 
 class irisRecognition(object):
@@ -39,6 +40,7 @@ class irisRecognition(object):
         self.pupil_hough_minimum = cfg["pupil_hough_minimum"]
         self.pupil_iris_max_ratio = cfg["pupil_iris_max_ratio"]
         self.max_pupil_iris_shift = cfg["max_pupil_iris_shift"]
+        self.visMinAgreedBits = cfg["vis_min_agreed_bits"]
 
         # Loading the CCNet
         self.CCNET_INPUT_SIZE = (320,240)
@@ -62,9 +64,12 @@ class irisRecognition(object):
         self.model.eval()
         self.softmax = nn.LogSoftmax(dim=1)
         self.input_transform = Compose([ToTensor(),])
-
         print("irisRecognition class: initialized")
 
+        # Misc
+        self.se = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7))
+        self.sk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(15,15))
+        self.ISO_RES = (640,480)
 
     def segment(self,image):
 
@@ -106,6 +111,15 @@ class irisRecognition(object):
         imVis[:,:,1] = np.clip(imVis[:,:,1] + 96*mask,0,255)
         imVis = cv2.circle(imVis, (pupil_xyr[0],pupil_xyr[1]), pupil_xyr[2], (0, 0, 255), 2)
         imVis = cv2.circle(imVis, (iris_xyr[0],iris_xyr[1]), iris_xyr[2], (255, 0, 0), 2)
+
+        return imVis
+
+    def matchingVis(self,im,mask):
+
+        imVis = np.stack((np.array(im),)*3, axis=-1)
+        mask_blur = cv2.filter2D(mask,-1,self.sk)
+        mask_blur = (48 * mask_blur / np.max(mask_blur)).astype(int)
+        imVis[:,:,1] = np.clip(imVis[:,:,1] + mask_blur,0,255)
 
         return imVis
 
@@ -228,18 +242,45 @@ class irisRecognition(object):
 
         scoreMean = np.mean(scoreC, axis=0)
         scoreC = np.min(scoreMean)
-        scoreC_shift = np.argmin(scoreMean)-self.max_shift
+        scoreC_shift = self.max_shift-np.argmin(scoreMean)
 
         return scoreC, scoreC_shift
-    
-    def visualizeMatchingResult(self, code1, code2, mask1, mask2, shift):
 
-        xorCodes = np.logical_xor(self.code1, np.roll(self.code2, shift, axis=1))
-        andMasks = np.logical_and(self.mask1, np.roll(self.mask2, shift, axis=1))
+    def polar(self,x,y):
+        return math.hypot(x,y),math.degrees(math.atan2(y,x))
+
+    def visualizeMatchingResult(self, code1, code2, mask1, mask2, shift, pupil_xyr, iris_xyr):
+        
+        resMask = np.zeros((self.ISO_RES[1],self.ISO_RES[0]))
+
+        # calculate heat map
+        xorCodes = np.logical_xor(self.code1, np.roll(self.code2, self.max_shift-shift, axis=1))
+        andMasks = np.logical_and(self.mask1, np.roll(self.mask2, self.max_shift-shift, axis=1))
 
         heatMap = 1-xorCodes.astype(int)
         heatMap = np.pad(np.mean(heatMap,axis=2), pad_width=((8,8),(0,0)), mode='constant', constant_values=0)
         andMasks = np.pad(andMasks, pad_width=((8,8),(0,0)), mode='constant', constant_values=0)
-        heatMap = 255 * heatMap * andMasks
+        heatMap = heatMap * andMasks
+
+        heatMap = (heatMap >= self.visMinAgreedBits / 100).astype(np.uint8)
+        heatMap = np.roll(heatMap,int(self.polar_width/2),axis=1)
+
+        for j in range(self.ISO_RES[0]):
+            for i in range(self.ISO_RES[1]):
+                xi = j-iris_xyr[0]
+                yi = i-iris_xyr[1]
+                ri = iris_xyr[2]
+                xp = j-pupil_xyr[0]
+                yp = i-pupil_xyr[1]
+                rp = pupil_xyr[2]
+
+                if xi**2 + yi**2 < ri**2 and xp**2 + yp**2 > rp**2:
+                    rr,tt = self.polar(xi,yi)
+                    tt = np.clip(np.round(self.polar_width*((180+tt)/360)).astype(int),0,self.polar_width-1)
+                    rr = np.clip(np.round(self.polar_height * (rr - rp) / (ri - rp)).astype(int),0,self.polar_height-1)
+                    resMask[i,j] = heatMap[rr,tt] # *** TODO correct mapping for shifted p/i centers 
+        
+        heatMap = 255*cv2.morphologyEx(resMask, cv2.MORPH_OPEN, kernel=self.se)
 
         return heatMap
+
