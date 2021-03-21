@@ -59,15 +59,12 @@ def main(cfg):
     score, shift = irisRec.matchCodes(code_list[0], code_list[1], polar_mask_list[0], polar_mask_list[1])
     print(score)
 
-    heatMap = irisRec.visualizeMatchingResult(code_list[0], code_list[1], polar_mask_list[0], polar_mask_list[1], shift, pupil_xyr_list[0], iris_xyr_list[0])
-    # cv2.imwrite("../dataProcessed/" + filename_list[0] + "_" + filename_list[1] + "_heatMap.png",heatMap)
+    # Visualization: heat map (most similar regions in red, least similar regions in blue)
+    imVis = irisRec.visualizeMatchingResult(code_list[0], code_list[1], polar_mask_list[0], polar_mask_list[1], shift, image_list[0], pupil_xyr_list[0], iris_xyr_list[0])
+    cv2.imwrite("../dataProcessed/" + filename_list[0] + "_HeatMapVis.png",imVis)
 
-    imVis = irisRec.matchingVis(image_list[0],heatMap)
-    cv2.imwrite("../dataProcessed/" + filename_list[0] + "_heatMapVis.png",imVis)
-
-    heatMap = irisRec.visualizeMatchingResult(code_list[0], code_list[1], polar_mask_list[0], polar_mask_list[1], shift, pupil_xyr_list[1], iris_xyr_list[1])
-    imVis = irisRec.matchingVis(image_list[1],heatMap)
-    cv2.imwrite("../dataProcessed/" + filename_list[1] + "_heatMapVis.png",imVis)
+    imVis = irisRec.visualizeMatchingResult(code_list[0], code_list[1], polar_mask_list[0], polar_mask_list[1], shift, image_list[1], pupil_xyr_list[1], iris_xyr_list[1])
+    cv2.imwrite("../dataProcessed/" + filename_list[1] + "_HeatMapVis.png",imVis)
 
     return None
 

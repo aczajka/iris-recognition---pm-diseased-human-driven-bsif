@@ -41,6 +41,7 @@ class irisRecognition(object):
         self.pupil_iris_max_ratio = cfg["pupil_iris_max_ratio"]
         self.max_pupil_iris_shift = cfg["max_pupil_iris_shift"]
         self.visMinAgreedBits = cfg["vis_min_agreed_bits"]
+        self.vis_mode = cfg["vis_mode"]
 
         # Loading the CCNet
         self.CCNET_INPUT_SIZE = (320,240)
@@ -70,6 +71,7 @@ class irisRecognition(object):
         self.se = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7))
         self.sk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(15,15))
         self.ISO_RES = (640,480)
+        self.clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(16,16))
 
     def segment(self,image):
 
@@ -114,14 +116,6 @@ class irisRecognition(object):
 
         return imVis
 
-    def matchingVis(self,im,mask):
-
-        imVis = np.stack((np.array(im),)*3, axis=-1)
-        mask_blur = cv2.filter2D(mask,-1,self.sk)
-        mask_blur = (48 * mask_blur / np.max(mask_blur)).astype(int)
-        imVis[:,:,1] = np.clip(imVis[:,:,1] + mask_blur,0,255)
-
-        return imVis
 
     def circApprox(self,mask):
 
@@ -249,7 +243,9 @@ class irisRecognition(object):
     def polar(self,x,y):
         return math.hypot(x,y),math.degrees(math.atan2(y,x))
 
-    def visualizeMatchingResult(self, code1, code2, mask1, mask2, shift, pupil_xyr, iris_xyr):
+
+
+    def visualizeMatchingResult(self, code1, code2, mask1, mask2, shift, im, pupil_xyr, iris_xyr):
         
         resMask = np.zeros((self.ISO_RES[1],self.ISO_RES[0]))
 
@@ -262,7 +258,9 @@ class irisRecognition(object):
         andMasks = np.pad(andMasks, pad_width=((8,8),(0,0)), mode='constant', constant_values=0)
         heatMap = heatMap * andMasks
 
-        heatMap = (heatMap >= self.visMinAgreedBits / 100).astype(np.uint8)
+        if 'single' in self.vis_mode:
+            heatMap = (heatMap >= self.visMinAgreedBits / 100).astype(np.uint8)
+
         heatMap = np.roll(heatMap,int(self.polar_width/2),axis=1)
 
         for j in range(self.ISO_RES[0]):
@@ -281,6 +279,21 @@ class irisRecognition(object):
                     resMask[i,j] = heatMap[rr,tt] # *** TODO correct mapping for shifted p/i centers 
         
         heatMap = 255*cv2.morphologyEx(resMask, cv2.MORPH_OPEN, kernel=self.se)
+        mask_blur = cv2.filter2D(heatMap,-1,self.sk)
 
-        return heatMap
+        if 'single' in self.vis_mode:
+            mask_blur = (48 * mask_blur / np.max(mask_blur)).astype(int)
+            imVis = np.stack((np.array(im),)*3, axis=-1)
+            imVis[:,:,1] = np.clip(imVis[:,:,1] + mask_blur,0,255)
+        elif 'heat_map' in self.vis_mode:
+            mask_blur = (255 * mask_blur / np.max(mask_blur)).astype(int)
+            heatMap = np.uint8(np.stack((np.array(mask_blur),)*3, axis=-1))
+            heatMap = cv2.applyColorMap(heatMap, cv2.COLORMAP_JET)
+            cl_im = self.clahe.apply(np.array(im))
+            imVis = np.stack((cl_im,)*3, axis=-1)
+            imVis = cv2.addWeighted(heatMap, 0.1, np.array(imVis), 0.9, 32)
+        else:
+            raise Exception("Unknown visualization mode")
+
+        return imVis
 

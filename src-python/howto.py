@@ -55,17 +55,7 @@ def main(cfg):
             if i < j:
                 score, shift = irisRec.matchCodes(code1, code2, mask1, mask2)
                 print("{} <-> {} : {:.3f} (mutual rot: {:.2f} deg)".format(fn1,fn2,score,360*shift/irisRec.polar_width))
-
-                b = irisRec.visualizeMatchingResult(code1, code2, mask1, mask2, shift)
-                cv2.imwrite("../dataProcessed/" + os.path.splitext(fn1)[0] + "_" + os.path.splitext(fn2)[0] + "_b.png",b)
-
-                '''
-                for k in range(7):
-                    a = 255*cc[:,:,k].astype(int)
-                    cv2.imwrite("../dataProcessed/" + os.path.splitext(fn1)[0] + "_" + os.path.splitext(fn2)[0] + "_code{}".format(k) + ".png",a)
-                '''
-
-
+     
     return None
 
 if __name__ == "__main__":

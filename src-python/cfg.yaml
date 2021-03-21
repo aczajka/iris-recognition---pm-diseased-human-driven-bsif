@@ -26,4 +26,8 @@ recog_bsif_dir: "../filters/finetuned_bsif_eyetracker_data/"
 #######################################################
 # Matching visualization
 #######################################################
-vis_min_agreed_bits: 50 # % of agreeing bits across all filters for a given pixel to be included into "strong similar regions"
+vis_mode: "heat_map" 
+# heat_map: 
+# single:   annotates only "strong similar regions", that is regions for which % of agreeing bits 
+#           across all filters for a given pixel is larger than "vis_min_agreed_bits"
+vis_min_agreed_bits: 50 # used only if vis_mode = single
