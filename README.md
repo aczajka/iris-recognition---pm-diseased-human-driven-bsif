@@ -26,8 +26,8 @@ conda env create -f ccnet.yaml
 ```
 
 2. Run / analyze:
--- `howto.py`, which - as an example - encodes and matches three post-mortem samples from the Warsaw dataset
--- `howto_pair_with_visualization.py`, which demonstrates how to match a pair of images and get visualizations annotating salient regions within iris annulus
+* `howto.py`, which - as an example - encodes and matches three post-mortem samples from the Warsaw dataset
+* `howto_pair_with_visualization.py`, which demonstrates how to match a pair of images and get visualizations annotating salient regions within iris annulus
 
 
 # License
