@@ -29,6 +29,8 @@ conda env create -f ccnet.yaml
 * `howto.py`, which - as an example - encodes and matches three post-mortem samples from the Warsaw dataset
 * `howto_pair_with_visualization.py`, which demonstrates how to match a pair of images and get visualizations annotating salient regions within iris annulus
 
+![](vis_example.png)
+
 # Database
 
 The Warsaw datasets of post-mortem iris images (acquired from 79 cadavers in total) can be requested at http://zbum.ia.pw.edu.pl/EN/node/46. Warsaw post-mortem iris datasets are freely available for non-commercial purposes to all interested researchers.
