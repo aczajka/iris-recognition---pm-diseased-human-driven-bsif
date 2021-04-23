@@ -41,14 +41,17 @@ def main(cfg):
         code = irisRec.extractCode(im_polar)
         code_list.append(code)
 
-        # DEBUG: save selected processing results 
+        # DEBUG: save selected processing results
         im_mask.save("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_CCNet_mask.png")
         imVis = irisRec.segmentVis(im,mask,pupil_xyr,iris_xyr)
-        cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_CCNet_vis.png",imVis)
-        cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_im_polar_CCNet.png",im_polar)
-        cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_mask_polar_CCNet.png",mask_polar)
+        path = "../dataProcessed/" + os.path.splitext(fn)[0]
+        cv2.imwrite(path + "_seg_CCNet_vis.png",imVis)
+        cv2.imwrite(path + "_im_polar_CCNet.png",im_polar)
+        cv2.imwrite(path + "_mask_polar_CCNet.png",mask_polar)
         np.savez_compressed("./templates/" + os.path.splitext(fn)[0] + "_tmpl.npz",code)
-        
+        for i in range(irisRec.num_filters):
+            cv2.imwrite(("%s_code_filter%d.png" % (path,i)),255*code[:,:,i])
+
     # Matching (all-vs-all, as an example)
     for code1,mask1,fn1,i in zip(code_list,polar_mask_list,filename_list,range(len(code_list))):
         for code2,mask2,fn2,j in zip(code_list,polar_mask_list,filename_list,range(len(code_list))):
