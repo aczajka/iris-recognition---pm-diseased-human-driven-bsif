@@ -39,6 +39,13 @@ def main(args):
         
         print(fn)
 
+        if np.count_nonzero(mask)==0:
+            # failed segmentation
+            print('Failed segmentation.')
+            polar_mask_list.append(None)
+            code_list.append(None)
+            continue
+
         # circular approximation:
         pupil_xyr, iris_xyr = irisRec.circApprox(mask)
 
@@ -51,7 +58,7 @@ def main(args):
         code_list.append(code)
 
         # DEBUG: save selected processing results 
-        np.savez_compressed("./templates/" + os.path.splitext(fn)[0] + "_tmpl.npz",code)
+        # np.savez_compressed("./templates/" + os.path.splitext(fn)[0] + "_tmpl.npz",code)
         
     # Matching (all-vs-all, as an example)
     for reference, probe in pairs_list:
