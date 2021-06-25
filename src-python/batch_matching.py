@@ -7,71 +7,67 @@ import os
 import cv2
 import numpy as np
 
-def main(args):
-    
-    irisRec = irisRecognition(get_cfg(args.cfg_path))
-
-    with open(args.pairs,'r') as pfile:
-        data = pfile.readlines()
-    pairs_list = [l.strip('\n').split(' ') for l in data]
-
-    # Get the list of images to process
-    filename_list = list(set([y for x in pairs_list for y in x]))
-    image_list = []
-    mask_list = []
-    i = 0
-    filename_map = {}
-    for filename in filename_list:
-        im = Image.open(os.path.join(args.images, filename)).convert('L')
-        image_list.append(im)
-
-        maskname = os.path.join(args.masks, filename).replace('bmp','png')
-        mask = np.array(Image.open(maskname)).astype(np.bool)
-        mask_list.append(mask)
-        filename_map[filename]=i;
-        i += 1
-        
-
-    # Segmentation, normalization and encoding
-    polar_mask_list = []
-    code_list = []
-    for im, mask,fn in zip(image_list, mask_list, filename_list):
-        
-        print(fn)
-
-        if np.count_nonzero(mask)==0:
-            # failed segmentation
-            print('Failed segmentation.')
-            polar_mask_list.append(None)
-            code_list.append(None)
-            continue
-
+def preprocess_image(im, mask, irisRec, name, dir):
+    pmaskname = os.path.join(dir, name.replace('.bmp','_pmask.png'))
+    codename = os.path.join(dir, name.replace('.bmp','_tmpl.npz'))
+    try:
+        # load the calculated code/polar mask
+        mask_polar = cv2.imread(pmaskname, 0)
+        with np.load(codename) as npz:
+            code = npz['code']
+    except:
         # circular approximation:
         pupil_xyr, iris_xyr = irisRec.circApprox(mask)
 
         # cartesian to polar transformation:
         im_polar, mask_polar = irisRec.cartToPol(im, mask, pupil_xyr, iris_xyr)
-        polar_mask_list.append(mask_polar)
+        cv2.imwrite(pmaskname,mask_polar)
 
         # human-driven BSIF encoding:
         code = irisRec.extractCode(im_polar)
-        code_list.append(code)
+        np.savez_compressed(codename,code=code)
+    return code, mask_polar
 
-        # DEBUG: save selected processing results 
-        # np.savez_compressed("./templates/" + os.path.splitext(fn)[0] + "_tmpl.npz",code)
-        
+
+def match_pair(file1, file2, irisRec, imgdir, maskdir, tmpdir):
+    # load images/masks
+    reference = Image.open(os.path.join(imgdir, file1)).convert('L')
+    probe = Image.open(os.path.join(imgdir, file2)).convert('L')
+    
+    maskname = os.path.join(maskdir, file1).replace('bmp','png')
+    maskref = np.array(Image.open(maskname)).astype(np.bool)
+    maskname = os.path.join(maskdir, file2).replace('bmp','png')
+    maskprb = np.array(Image.open(maskname)).astype(np.bool)
+    
+    # failed segmentations
+    if np.count_nonzero(maskref)==0:
+        print(f'{file1} failed segmentation.')
+        maskref = None
+    if np.count_nonzero(maskprb)==0:
+        print(f'{file2} Failed segmentation.')
+        maskprb = None
+
+    # preprocessing
+    coderef, pmaskref = preprocess_image(reference, maskref, irisRec, file1, args.tempdir)
+    codeprb, pmaskprb = preprocess_image(probe, maskprb, irisRec, file2, args.tempdir)
+
+    # matching
+    score, shift = irisRec.matchCodes(coderef, codeprb, pmaskref, pmaskprb)
+
+    return score, shift
+
+
+def main(args):
+    
+    with open(args.pairs,'r') as pfile:
+        data = pfile.readlines()
+    pairs_list = [l.strip('\n').split(' ') for l in data]
+
+    irisRec = irisRecognition(get_cfg(args.cfg_path))
+
     # Matching (all-vs-all, as an example)
     for reference, probe in pairs_list:
-        
-        refix = filename_map[reference]
-        code1 = code_list[refix]
-        mask1 = polar_mask_list[refix]
-        
-        probix = filename_map[probe]
-        code2 = code_list[probix]
-        mask2 = polar_mask_list[probix]
-
-        score, shift = irisRec.matchCodes(code1, code2, mask1, mask2)
+        score, shift = match_pair(reference, probe, irisRec, args.images, args.masks, args.tempdir)
         print(f"{reference} {probe} {score}")
 
      
@@ -83,5 +79,6 @@ if __name__ == "__main__":
     parser.add_argument("--pairs", type=str, help="File containing image pairs to be compared.", required=True)
     parser.add_argument("--images", type=str, help="Directory containing the images to be compared.", default='../data')
     parser.add_argument("--masks", type=str, help="Directory containing the masks of the images.")
+    parser.add_argument("--tempdir", type=str, help="Directory to store masks and iriscodes.", default="../dataProcessed")
     args = parser.parse_args()
     main(args)
