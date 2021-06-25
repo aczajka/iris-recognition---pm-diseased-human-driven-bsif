@@ -7,7 +7,7 @@ import os
 import cv2
 import numpy as np
 
-from multiprocessing import Pool, BoundedSemaphore
+from multiprocessing import Pool, BoundedSemaphore, cpu_count
 
 def preprocess_image(im, mask, irisRec, name, dir):
     pmaskname = os.path.join(dir, name.replace('.bmp','_pmask.png'))
@@ -68,8 +68,9 @@ def main(args):
     pairs_list = [l.strip('\n').split(' ') for l in data]
 
     # parallelize matching
-    psema = BoundedSemaphore(8)
-    with Pool(8) as pool:
+    nprocs = cpu_count()
+    psema = BoundedSemaphore(nprocs)
+    with Pool(nprocs) as pool:
         def cb(*args):
             print(f"{args[0][0]} {args[0][1]} {args[0][2]}")
             psema.release()
