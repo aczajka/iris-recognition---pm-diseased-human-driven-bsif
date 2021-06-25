@@ -7,7 +7,7 @@ import os
 import cv2
 import numpy as np
 
-from multiprocessing import Pool
+from multiprocessing import Pool, BoundedSemaphore
 
 def preprocess_image(im, mask, irisRec, name, dir):
     pmaskname = os.path.join(dir, name.replace('.bmp','_pmask.png'))
@@ -43,10 +43,10 @@ def match_pair(file1, file2, imgdir, maskdir, tmpdir, cfg_path):
     
     # failed segmentations
     if np.count_nonzero(maskref)==0:
-        print(f'{file1} failed segmentation.')
+        # print(f'{file1} failed segmentation.')
         maskref = None
     if np.count_nonzero(maskprb)==0:
-        print(f'{file2} Failed segmentation.')
+        # print(f'{file2} Failed segmentation.')
         maskprb = None
 
     irisRec = irisRecognition(get_cfg(cfg_path))
@@ -68,18 +68,19 @@ def main(args):
     pairs_list = [l.strip('\n').split(' ') for l in data]
 
     # parallelize matching
+    psema = BoundedSemaphore(8)
     with Pool(8) as pool:
-        def callback(*args):
+        def cb(*args):
             print(f"{args[0][0]} {args[0][1]} {args[0][2]}")
+            psema.release()
             return
-        results = [
+        for reference, probe in pairs_list:
+            psema.acquire()
             pool.apply_async(
-                match_pair, 
-                args = (reference, probe, args.images, args.masks, args.tempdir, args.cfg_path),
-                callback=callback
+                match_pair,
+                (reference, probe, args.images, args.masks, args.tempdir, args.cfg_path), 
+                callback=cb
             )
-            for reference, probe in pairs_list]
-        results = [r.get for r in results]
 
 
 
