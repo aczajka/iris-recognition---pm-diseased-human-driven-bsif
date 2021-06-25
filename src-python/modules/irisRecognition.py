@@ -65,7 +65,7 @@ class irisRecognition(object):
         self.model.eval()
         self.softmax = nn.LogSoftmax(dim=1)
         self.input_transform = Compose([ToTensor(),])
-        print("irisRecognition class: initialized")
+        # print("irisRecognition class: initialized")
 
         # Misc
         self.se = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7))

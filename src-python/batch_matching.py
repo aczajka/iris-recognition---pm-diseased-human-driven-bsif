@@ -7,6 +7,8 @@ import os
 import cv2
 import numpy as np
 
+from multiprocessing import Pool
+
 def preprocess_image(im, mask, irisRec, name, dir):
     pmaskname = os.path.join(dir, name.replace('.bmp','_pmask.png'))
     codename = os.path.join(dir, name.replace('.bmp','_tmpl.npz'))
@@ -29,7 +31,7 @@ def preprocess_image(im, mask, irisRec, name, dir):
     return code, mask_polar
 
 
-def match_pair(file1, file2, irisRec, imgdir, maskdir, tmpdir):
+def match_pair(file1, file2, imgdir, maskdir, tmpdir, cfg_path):
     # load images/masks
     reference = Image.open(os.path.join(imgdir, file1)).convert('L')
     probe = Image.open(os.path.join(imgdir, file2)).convert('L')
@@ -47,14 +49,16 @@ def match_pair(file1, file2, irisRec, imgdir, maskdir, tmpdir):
         print(f'{file2} Failed segmentation.')
         maskprb = None
 
+    irisRec = irisRecognition(get_cfg(cfg_path))
+
     # preprocessing
-    coderef, pmaskref = preprocess_image(reference, maskref, irisRec, file1, args.tempdir)
-    codeprb, pmaskprb = preprocess_image(probe, maskprb, irisRec, file2, args.tempdir)
+    coderef, pmaskref = preprocess_image(reference, maskref, irisRec, file1, tmpdir)
+    codeprb, pmaskprb = preprocess_image(probe, maskprb, irisRec, file2, tmpdir)
 
     # matching
     score, shift = irisRec.matchCodes(coderef, codeprb, pmaskref, pmaskprb)
 
-    return score, shift
+    return file1, file2, score, shift
 
 
 def main(args):
@@ -63,15 +67,21 @@ def main(args):
         data = pfile.readlines()
     pairs_list = [l.strip('\n').split(' ') for l in data]
 
-    irisRec = irisRecognition(get_cfg(args.cfg_path))
+    # parallelize matching
+    with Pool(8) as pool:
+        def callback(*args):
+            print(f"{args[0][0]} {args[0][1]} {args[0][2]}")
+            return
+        results = [
+            pool.apply_async(
+                match_pair, 
+                args = (reference, probe, args.images, args.masks, args.tempdir, args.cfg_path),
+                callback=callback
+            )
+            for reference, probe in pairs_list]
+        results = [r.get for r in results]
 
-    # Matching (all-vs-all, as an example)
-    for reference, probe in pairs_list:
-        score, shift = match_pair(reference, probe, irisRec, args.images, args.masks, args.tempdir)
-        print(f"{reference} {probe} {score}")
 
-     
-    return None
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
