@@ -65,7 +65,7 @@ class irisRecognition(object):
         self.model.eval()
         self.softmax = nn.LogSoftmax(dim=1)
         self.input_transform = Compose([ToTensor(),])
-        print("irisRecognition class: initialized")
+        # print("irisRecognition class: initialized")
 
         # Misc
         self.se = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7))
@@ -216,6 +216,11 @@ class irisRecognition(object):
     # Match iris codes
     def matchCodes(self, code1, code2, mask1, mask2):
         
+        if code1 is None or mask1 is None:
+            return -1., 0.
+        if code2 is None or mask2 is None:
+            return -2., 0.
+
         margin = int(np.ceil(self.filter_size/2))
         code1 = np.array(code1)
         code2 = np.array(code2)
