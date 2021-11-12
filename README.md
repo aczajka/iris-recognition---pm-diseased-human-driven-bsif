@@ -35,6 +35,10 @@ conda env create -f ccnet.yaml
 
 The Warsaw datasets of post-mortem iris images (acquired from 79 cadavers in total) can be requested at http://zbum.ia.pw.edu.pl/EN/node/46. Warsaw post-mortem iris datasets are freely available for non-commercial purposes to all interested researchers.
 
+# Troubleshooting
+
+If you have problems with the `.mat` and `.pth` files, use `git-lfs clone` instead of `git clone`.
+
 # License
 
 This is a research open-source software. You are free to use it in your research projects. Please discuss individual licensing options if you want to use this software for commercial purposes, or to create and distribute closed source versions.
