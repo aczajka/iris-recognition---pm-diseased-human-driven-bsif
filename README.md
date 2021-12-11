@@ -37,7 +37,10 @@ The Warsaw datasets of post-mortem iris images (acquired from 79 cadavers in tot
 
 # Troubleshooting
 
-If you have problems with the `.mat` and `.pth` files, use `git-lfs clone` instead of `git clone`.
+If you have problems with the `.mat` and `.pth` files:
+
+* use `git-lfs clone` instead of `git clone`, OR
+* download the [models and filters from this Google Drive location] (https://drive.google.com/drive/folders/1pyifeABdRUQZWfjMEB0f0ye8h1K2qNDO?usp=sharing)
 
 # License
 
