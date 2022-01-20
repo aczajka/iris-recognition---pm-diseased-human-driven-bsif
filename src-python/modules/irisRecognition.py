@@ -12,11 +12,13 @@ from PIL import Image
 from skimage import img_as_bool
 import math
 from math import pi
+from modules.network import UNet_radius_center_conv10
 
 class irisRecognition(object):
-    def __init__(self, cfg):
+    def __init__(self, cfg, use_hough=True):
 
         # cParsing the config file
+        self.use_hough = use_hough
         self.polar_height = cfg["polar_height"]
         self.polar_width = cfg["polar_width"]
         self.angles = angles = np.arange(0, 2 * np.pi, 2 * np.pi / self.polar_width)
@@ -30,16 +32,20 @@ class irisRecognition(object):
         self.max_shift = cfg["recog_max_shift"]
         self.cuda = cfg["cuda"]
         self.cuda = cfg["gpu"]
-        self.ccnet_model_path = cfg["ccnet_model_path"]
+        if self.use_hough:
+            self.ccnet_model_path = cfg["ccnet_model_path"]
+        else:
+            self.ccnet_model_path = cfg["modified_ccnet_model_path"]
         self.filter = scipy.io.loadmat(cfg["recog_bsif_dir"]+'ICAtextureFilters_{0}x{1}_{2}bit.mat'.format(self.filter_size, self.filter_size, self.num_filters))['ICAtextureFilters']
-        self.iris_hough_param1 = cfg["iris_hough_param1"]
-        self.iris_hough_param2 = cfg["iris_hough_param2"]
-        self.iris_hough_margin = cfg["iris_hough_margin"]
-        self.pupil_hough_param1 = cfg["pupil_hough_param1"]
-        self.pupil_hough_param2 = cfg["pupil_hough_param2"]
-        self.pupil_hough_minimum = cfg["pupil_hough_minimum"]
-        self.pupil_iris_max_ratio = cfg["pupil_iris_max_ratio"]
-        self.max_pupil_iris_shift = cfg["max_pupil_iris_shift"]
+        if self.use_hough == True:
+            self.iris_hough_param1 = cfg["iris_hough_param1"]
+            self.iris_hough_param2 = cfg["iris_hough_param2"]
+            self.iris_hough_margin = cfg["iris_hough_margin"]
+            self.pupil_hough_param1 = cfg["pupil_hough_param1"]
+            self.pupil_hough_param2 = cfg["pupil_hough_param2"]
+            self.pupil_hough_minimum = cfg["pupil_hough_minimum"]
+            self.pupil_iris_max_ratio = cfg["pupil_iris_max_ratio"]
+            self.max_pupil_iris_shift = cfg["max_pupil_iris_shift"]
         self.visMinAgreedBits = cfg["vis_min_agreed_bits"]
         self.vis_mode = cfg["vis_mode"]
 
@@ -47,7 +53,10 @@ class irisRecognition(object):
         self.CCNET_INPUT_SIZE = (320,240)
         self.CCNET_NUM_CHANNELS = 1
         self.CCNET_NUM_CLASSES = 2
-        self.model = UNet(self.CCNET_NUM_CLASSES, self.CCNET_NUM_CHANNELS)
+        if self.use_hough:
+            self.model = UNet(self.CCNET_NUM_CLASSES, self.CCNET_NUM_CHANNELS)
+        else:
+            self.model = UNet_radius_center_conv10(2, 1, residual=True)
         if self.cuda:
             torch.cuda.set_device(self.gpu)
             self.model = model.cuda()
@@ -72,6 +81,56 @@ class irisRecognition(object):
         self.sk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(15,15))
         self.ISO_RES = (640,480)
         self.clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(16,16))
+    
+    def segment_and_circApprox(self, image):
+        if self.use_hough:
+            pred = self.segment(image)
+            pupil_xyr, iris_xyr = self.circApprox(pred)
+            return pred, pupil_xyr, iris_xyr
+        else:
+            w,h = image.size
+            image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_CUBIC)
+            w_mult = w/self.CCNET_INPUT_SIZE[0]
+            h_mult = h/self.CCNET_INPUT_SIZE[1]
+
+            outputs, inp_xyr_t = self.model(Variable(self.input_transform(image).unsqueeze(0)))
+
+            #Circle params
+            inp_xyr = inp_xyr_t.tolist()[0]
+            pupil_x = int(inp_xyr[0] * w_mult)
+            pupil_y = int(inp_xyr[1] * h_mult)
+            pupil_r = int(inp_xyr[2] * max(w_mult, h_mult))
+            iris_x = int(inp_xyr[3] * w_mult)
+            iris_y = int(inp_xyr[4] * h_mult)
+            iris_r = int(inp_xyr[5] * max(w_mult, h_mult))
+
+            #Mask
+            logprob = self.softmax(outputs).data.cpu().numpy()
+            pred = np.argmax(logprob, axis=1)*255
+            pred = Image.fromarray(pred[0].astype(np.uint8))
+            pred = np.array(pred)
+        
+            # Optional: uncomment the following lines to take only the biggest blob returned by CCNet
+            '''
+            nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(pred, connectivity=4)
+            if nb_components > 1:
+                sizes = stats[:, -1] 
+                max_label = 1
+                max_size = sizes[1]    
+                for i in range(2, nb_components):
+                    if sizes[i] > max_size:
+                        max_label = i
+                        max_size = sizes[i]
+
+                pred = np.zeros(output.shape)
+                pred[output == max_label] = 255
+                pred = np.asarray(pred, dtype=np.uint8)
+            '''
+
+            # Resize the mask to the original image size
+            pred = img_as_bool(cv2.resize(np.array(pred), (w,h), cv2.INTER_NEAREST))
+
+            return pred, np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
 
     def segment(self,image):
 
@@ -152,7 +211,7 @@ class irisRecognition(object):
             pupil_x = iris_x
             pupil_y = iris_y
             pupil_r = iris_r // 3
-        
+
         return np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
 
 
