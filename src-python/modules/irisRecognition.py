@@ -54,12 +54,12 @@ class irisRecognition(object):
         self.mod_model = UNet_radius_center_conv10(self.CCNET_NUM_CLASSES, self.CCNET_NUM_CHANNELS, residual=True)
         if self.cuda:
             self.device = torch.device('cuda')
-            torch.set_default_tensor_type('torch.cuda.FloatTensor')
+            #torch.set_default_tensor_type('torch.cuda.FloatTensor')
             self.model = self.model.cuda()
             self.mod_model = self.mod_model.cuda()
         else:
             self.device = torch.device('cpu')
-            torch.set_default_tensor_type('torch.FloatTensor')
+            #torch.set_default_tensor_type('torch.FloatTensor')
         if self.ccnet_model_path:
             try:
                 if self.cuda:
