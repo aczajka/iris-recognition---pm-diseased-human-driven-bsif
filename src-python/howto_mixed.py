@@ -31,7 +31,7 @@ def main(cfg):
         im_mask = Image.fromarray(mask)
         
         # circular approximation:
-        pupil_xyr, iris_xyr = irisRec.circApprox(mask, image=im)
+        pupil_xyr, iris_xyr = irisRec.circApprox(image=im)
 
         # cartesian to polar transformation:
         im_polar, mask_polar = irisRec.cartToPol(im, mask, pupil_xyr, iris_xyr)

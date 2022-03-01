@@ -192,8 +192,12 @@ class irisRecognition(object):
         return imVis
 
 
-    def circApprox(self,mask,image=None):
-        if self.use_hough:
+    def circApprox(self,mask=None,image=None):
+        if self.use_hough and mask is None:
+            print('Please provide mask if you want to use hough transform')
+        if (not self.use_hough) and image is None:
+            print('Please provide image if you want to use the mccnet model') 
+        if self.use_hough and (mask is not None):
             # Iris boundary approximation
             mask_for_iris = 255*(1 - np.uint8(mask))
             iris_indices = np.where(mask_for_iris == 0)
@@ -229,13 +233,13 @@ class irisRecognition(object):
                 pupil_r = iris_r // 3
 
             return np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
-        else:
+        elif (not self.use_hough) and (image is not None):
             w,h = image.size
-            image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_LINEAR)
+            image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_CUBIC)
             w_mult = w/self.CCNET_INPUT_SIZE[0]
             h_mult = h/self.CCNET_INPUT_SIZE[1]
 
-            inp_xyr_t = self.mod_model.encode_params(Variable(self.input_transform(image).unsqueeze(0).to(self.device)))
+            outputs, inp_xyr_t = self.mod_model(Variable(self.input_transform(image).unsqueeze(0).to(self.device)))
 
             #Circle params
             inp_xyr = inp_xyr_t.tolist()[0]
@@ -246,7 +250,7 @@ class irisRecognition(object):
             iris_y = round(inp_xyr[4] * h_mult)
             iris_r = round(inp_xyr[5] * max(w_mult, h_mult))
 
-            return np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
+            return np.array([pupil_x,pupil_y,pupil_r]).astype(int), np.array([iris_x,iris_y,iris_r]).astype(int)
 
 
 
