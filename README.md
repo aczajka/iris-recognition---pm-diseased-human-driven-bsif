@@ -33,7 +33,9 @@ The python version has an updated pupil and iris circle estimator based on a mod
 
 
 
-* You can run `howto_mccnet.py` and `howto_pair_with_visualization_mccnet.py` to do the same but with the modified CC-Net architecture that estimates the pupil and iris circle parameters as well.
+* `howto_mccnet.py` and `howto_pair_with_visualization_mccnet.py` shows how to use modified CC-Net architecture to estimate both the pupil and iris circle parameters and the masks.
+
+* `howto_mixed.py` and `howto_pair_with_visualization_mixed.py` shows how to use modified CC-Net architecture to estimate the pupil and iris circle parameters and use the original CC-Net architecture to find the masks.
 
 
 ![](vis_example.png)
