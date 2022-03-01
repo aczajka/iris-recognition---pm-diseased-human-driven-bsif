@@ -2,7 +2,7 @@
 # Segmentation settings
 #######################################################
 ccnet_model_path: "../models/CCNet_epoch_260_NIRRGBmixed_adam.pth"
-modified_ccnet_model_path: "../models/unet_conv10-res-best.pth"
+modified_ccnet_model_path: "../models/8_unet_denseconv10_nobn_best.pth"
 cuda: ""
 gpu: ""
 iris_hough_param1: 30

@@ -12,7 +12,7 @@ from PIL import Image
 from skimage import img_as_bool
 import math
 from math import pi
-from modules.network import UNet_radius_center_conv10
+from modules.network import UNet_radius_center_denseconv
 
 class irisRecognition(object):
     def __init__(self, cfg, use_hough=True):
@@ -51,7 +51,7 @@ class irisRecognition(object):
         self.CCNET_NUM_CHANNELS = 1
         self.CCNET_NUM_CLASSES = 2
         self.model = UNet(self.CCNET_NUM_CLASSES, self.CCNET_NUM_CHANNELS)
-        self.mod_model = UNet_radius_center_conv10(self.CCNET_NUM_CLASSES, self.CCNET_NUM_CHANNELS, residual=True)
+        self.mod_model = UNet_radius_center_denseconv(self.CCNET_NUM_CLASSES, self.CCNET_NUM_CHANNELS, num_params=6, width=8, n_convs=10, is_bn = False, dense_bn = False)
         if self.cuda:
             self.device = torch.device('cuda')
             #torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -105,7 +105,7 @@ class irisRecognition(object):
             return pred, pupil_xyr, iris_xyr
         else:
             w,h = image.size
-            image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_CUBIC)
+            image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_LINEAR)
             w_mult = w/self.CCNET_INPUT_SIZE[0]
             h_mult = h/self.CCNET_INPUT_SIZE[1]
 
@@ -151,7 +151,7 @@ class irisRecognition(object):
     def segment(self,image):
 
         w,h = image.size
-        image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_CUBIC)
+        image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_LINEAR)
 
         outputs = self.model(Variable(self.input_transform(image).unsqueeze(0).to(self.device)))
         logprob = self.softmax(outputs).data.cpu().numpy()
@@ -231,11 +231,11 @@ class irisRecognition(object):
             return np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
         else:
             w,h = image.size
-            image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_CUBIC)
+            image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_LINEAR)
             w_mult = w/self.CCNET_INPUT_SIZE[0]
             h_mult = h/self.CCNET_INPUT_SIZE[1]
 
-            outputs, inp_xyr_t = self.mod_model(Variable(self.input_transform(image).unsqueeze(0).to(self.device)))
+            inp_xyr_t = self.mod_model.encode_params(Variable(self.input_transform(image).unsqueeze(0).to(self.device)))
 
             #Circle params
             inp_xyr = inp_xyr_t.tolist()[0]

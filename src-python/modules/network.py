@@ -8,40 +8,57 @@ import numpy as np
 
 class UNetUp(nn.Module):
 
-    def __init__(self, in_channels, features, out_channels):
+    def __init__(self, in_channels, features, out_channels, is_bn = True):
         super().__init__()
-
-        self.up = nn.Sequential(
-            nn.Conv2d(in_channels, features, 3, padding = 1),
-            nn.BatchNorm2d(features),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(features, features, 3, padding = 1),
-            nn.BatchNorm2d(features),
-            nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(features, out_channels, 2, stride=2),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
-        )
+        if is_bn:
+            self.up = nn.Sequential(
+                nn.Conv2d(in_channels, features, 3, padding = 1),
+                nn.BatchNorm2d(features),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(features, features, 3, padding = 1),
+                nn.BatchNorm2d(features),
+                nn.ReLU(inplace=True),
+                nn.ConvTranspose2d(features, out_channels, 2, stride=2),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(inplace=True)
+            )
+        else:
+            self.up = nn.Sequential(
+                nn.Conv2d(in_channels, features, 3, padding = 1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(features, features, 3, padding = 1),
+                nn.ReLU(inplace=True),
+                nn.ConvTranspose2d(features, out_channels, 2, stride=2),
+                nn.ReLU(inplace=True)
+            )
 
     def forward(self, x):
         return self.up(x)
 
+
 class UNetDown(nn.Module):
 
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, is_bn = True):
         super().__init__()
 
-        layers = [
-            nn.MaxPool2d(2, stride=2),
-            nn.Conv2d(in_channels, out_channels, 3, padding = 1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, 3, padding = 1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-            ]
-
-        self.down = nn.Sequential(*layers)
+        if is_bn:
+            self.down = nn.Sequential(
+                nn.MaxPool2d(2, stride=2),
+                nn.Conv2d(in_channels, out_channels, 3, padding = 1),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(out_channels, out_channels, 3, padding = 1),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(inplace=True)
+            )
+        else:
+            self.down = nn.Sequential(
+                nn.MaxPool2d(2, stride=2),
+                nn.Conv2d(in_channels, out_channels, 3, padding = 1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(out_channels, out_channels, 3, padding = 1),
+                nn.ReLU(inplace=True)
+            )
 
     def forward(self, x):
         return self.down(x)
@@ -124,105 +141,100 @@ class UNet(nn.Module):
 
         return self.final(enc1)
 
-class UNet_radius_center_conv10(nn.Module):
+class UNet_radius_center_denseconv(nn.Module):
 
-    def __init__(self, num_classes, num_channels, residual=False):
+    def __init__(self, num_classes, num_channels, num_params=6, width=4, n_convs=10, is_bn = True, dense_bn = True):
         super().__init__()
-        self.residual = residual
-        self.first = nn.Sequential(
-            nn.Conv2d(num_channels, 4, 3, padding = 1),
-            nn.BatchNorm2d(4),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(4, 4, 3, padding = 1),
-            nn.BatchNorm2d(4),
-            nn.ReLU(inplace=True)
-        )
-        self.dec2 = UNetDown(4, 8)
-        self.dec3 = UNetDown(8, 16)
-        self.dec4 = UNetDown(16, 32)
+        self.n_convs = n_convs
+        self.is_bn = is_bn
+        self.dense_bn = dense_bn
+        if self.is_bn:
+            self.first = nn.Sequential(
+                nn.Conv2d(num_channels, width, 3, padding = 1),
+                nn.BatchNorm2d(width),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(width, width, 3, padding = 1),
+                nn.BatchNorm2d(width),
+                nn.ReLU(inplace=True)
+            )
+        else:
+            self.first = nn.Sequential(
+                nn.Conv2d(num_channels, width, 3, padding = 1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(width, width, 3, padding = 1),
+                nn.ReLU(inplace=True)
+            )
+            
+        self.dec2 = UNetDown(width, width*2, is_bn = self.is_bn)
+        self.dec3 = UNetDown(width*2, width*4, is_bn = self.is_bn)
+        self.dec4 = UNetDown(width*4, width*8, is_bn = self.is_bn)
 
         self.center = nn.MaxPool2d(2, stride=2)
-        self.center1 = nn.Conv2d(32, 64, 3, padding = 1)
-        self.center_bn = nn.BatchNorm2d(64)
+        self.center1 = nn.Conv2d(width*8, width*16, 3, padding = 1)
+        self.center_bn = nn.BatchNorm2d(width*16)
         self.center_relu = nn.ReLU(inplace=True)
-        self.center2 = nn.Conv2d(64, 64, 3, padding = 1)
-        self.center2_bn = nn.BatchNorm2d(64)
+        self.center2 = nn.Conv2d(width*16, width*16, 3, padding = 1)
+        self.center2_bn = nn.BatchNorm2d(width*16)
         self.center2relu = nn.ReLU(inplace=True)
-        self.center3 = nn.ConvTranspose2d(64, 32, 2, stride=2)
-        self.center3_bn = nn.BatchNorm2d(32)
+        self.center3 = nn.ConvTranspose2d(width*16, width*8, 2, stride=2)
+        self.center3_bn = nn.BatchNorm2d(width*8)
         self.center3_relu = nn.ReLU(inplace=True)
         
         #self.center4 = nn.AdaptiveAvgPool2d((1,1)
         #self.center4_relu = nn.ReLU(inplace=True)
-        self.xyr1_conv = nn.Conv2d(64, 64, 3, padding = 1)
-        self.xyr1_bn = nn.BatchNorm2d(64)
-        self.xyr1_relu = nn.ReLU(inplace=True)
-        # 64 x 20 x 15
-        self.xyr2_conv = nn.Conv2d(64, 64, 3, padding = 1)
-        self.xyr2_bn = nn.BatchNorm2d(64)
-        self.xyr2_relu = nn.ReLU(inplace=True)
-        # 64 x 20 x 15
-        self.xyr3_conv = nn.Conv2d(64, 64, 3, padding = 1)
-        self.xyr3_bn = nn.BatchNorm2d(64)
-        self.xyr3_relu = nn.ReLU(inplace=True)
-        # 64 x 20 x 15
-        self.xyr4_conv = nn.Conv2d(64, 64, 3, padding = 1)
-        self.xyr4_bn = nn.BatchNorm2d(64)
-        self.xyr4_relu = nn.ReLU(inplace=True)
+        self.xyr_convs = []
+        self.xyr_bns = []
+        self.xyr_relus = []
         
-        self.xyr5_conv = nn.Conv2d(64, 64, 3, padding = 1)
-        self.xyr5_bn = nn.BatchNorm2d(64)
-        self.xyr5_relu = nn.ReLU(inplace=True)
+        for i in range(self.n_convs):
+            self.xyr_convs.append(nn.Conv2d(width*16*(i+1), width*16, 3, padding = 1))
+            self.xyr_bns.append(nn.BatchNorm2d(width*16))
+            self.xyr_relus.append(nn.ReLU(inplace=True))
         
-        self.xyr6_conv = nn.Conv2d(64, 64, 3, padding = 1)
-        self.xyr6_bn = nn.BatchNorm2d(64)
-        self.xyr6_relu = nn.ReLU(inplace=True)
+        self.xyr_convs = nn.ModuleList(self.xyr_convs)
+        self.xyr_bns = nn.ModuleList(self.xyr_bns)
+        self.xyr_relus = nn.ModuleList(self.xyr_relus)
         
-        self.xyr7_conv = nn.Conv2d(64, 64, 3, padding = 1)
-        self.xyr7_bn = nn.BatchNorm2d(64)
-        self.xyr7_relu = nn.ReLU(inplace=True)
-        
-        self.xyr8_conv = nn.Conv2d(64, 64, 3, padding = 1)
-        self.xyr8_bn = nn.BatchNorm2d(64)
-        self.xyr8_relu = nn.ReLU(inplace=True)
-        
-        self.xyr9_conv = nn.Conv2d(64, 64, 3, padding = 1)
-        self.xyr9_bn = nn.BatchNorm2d(64)
-        self.xyr9_relu = nn.ReLU(inplace=True)
-        
-        self.xyr10_conv = nn.Conv2d(64, 64, 3, padding = 1)
-        self.xyr10_bn = nn.BatchNorm2d(64)
-        self.xyr10_relu = nn.ReLU(inplace=True)
         
         # 64 x 20 x 15
-        self.xyr11_input = nn.Flatten()
-        self.xyr11_linear = nn.Linear(64 * 20 * 15, 6)
+        self.xyr_input = nn.Flatten()
+        self.xyr_linear = nn.Linear(width*16 * 20 * 15, num_params)
         
-        self.enc4 = UNetUp(64, 32, 16)
-        self.enc3 = UNetUp(32, 16, 8)
-        self.enc2 = UNetUp(16, 8, 4)
-        self.enc1 = nn.Sequential(
-            nn.Conv2d(8, 4, 3, padding = 1),
-            nn.BatchNorm2d(4),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(4, 4, 3, padding = 1),
-            nn.BatchNorm2d(4),
-            nn.ReLU(inplace=True),
-        )
-        self.final = nn.Conv2d(4, num_classes, 1)
+        self.enc4 = UNetUp(width*16, width*8, width*4, is_bn = self.is_bn)
+        self.enc3 = UNetUp(width*8, width*4, width*2, is_bn = self.is_bn)
+        self.enc2 = UNetUp(width*4, width*2, width, is_bn = self.is_bn)
+        if self.is_bn:
+            self.enc1 = nn.Sequential(
+                nn.Conv2d(width*2, width, 3, padding = 1),
+                nn.BatchNorm2d(width),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(width, width, 3, padding = 1),
+                nn.BatchNorm2d(width),
+                nn.ReLU(inplace=True),
+            )
+        else:
+            self.enc1 = nn.Sequential(
+                nn.Conv2d(width*2, width, 3, padding = 1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(width, width, 3, padding = 1),
+                nn.ReLU(inplace=True),
+            )
+        self.final = nn.Conv2d(width, num_classes, 1)
         self._initialize_weights()
      
     def _initialize_weights(self):
-            for m in self.modules():
-                 if isinstance(m, nn.Conv2d):
-                     n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                     m.weight.data.normal_(0, np.sqrt(2. / n))
-                     #print(m.bias)
-                     #if m.bias:
-                     init.constant_(m.bias, 0)
-                 elif isinstance(m, nn.BatchNorm2d):
-                     m.weight.data.fill_(1)
-                     m.bias.data.zero_()
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, np.sqrt(2. / n))
+                init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+                m.bias.data.zero_()
+
 
     def forward(self, x):
         dec1 = self.first(x)
@@ -241,87 +253,26 @@ class UNet_radius_center_conv10(nn.Module):
         center9 = self.center3_bn(center8)
         center10 = self.center3_relu(center9)
         
-        xyr1 = self.xyr1_conv(center7)
-        xyr2 = self.xyr1_bn(xyr1)
-        xyr3 = self.xyr1_relu(xyr2)
+        xyr = [center7]
+        dense_col = [center7]
+        for i in range(self.n_convs):
+            xyr.append(self.xyr_convs[i](torch.cat(dense_col, 1)))
+            if self.dense_bn:
+                xyr.append(self.xyr_bns[i](xyr[-1]))
+            dense_col.append(self.xyr_relus[i](xyr[-1]))
+                
         
-        if self.residual:
-            xyr3 = xyr3 + center7
-        
-        xyr4 = self.xyr2_conv(xyr3)
-        xyr5 = self.xyr2_bn(xyr4)
-        xyr6 = self.xyr2_relu(xyr5)
-        
-        if self.residual:
-            xyr6 = xyr6 + xyr3
-        
-        xyr7 = self.xyr3_conv(xyr6)
-        xyr8 = self.xyr3_bn(xyr7)
-        xyr9 = self.xyr3_relu(xyr8)
-        
-        if self.residual:
-            xyr9 = xyr9 + xyr6
-        
-        xyr10 = self.xyr4_conv(xyr9)
-        xyr11 = self.xyr4_bn(xyr10)
-        xyr12 = self.xyr4_relu(xyr11)
-        
-        if self.residual:
-            xyr12 = xyr12 + xyr9
-        
-        xyr13 = self.xyr5_conv(xyr12)
-        xyr14 = self.xyr5_bn(xyr13)
-        xyr15 = self.xyr5_relu(xyr14)
-        
-        if self.residual:
-            xyr15 = xyr15 + xyr12
-            
-        xyr16 = self.xyr6_conv(xyr15)
-        xyr17 = self.xyr6_bn(xyr16)
-        xyr18 = self.xyr6_relu(xyr17)
-        
-        if self.residual:
-            xyr18 = xyr18 + xyr15
-        
-        xyr19 = self.xyr7_conv(xyr18)
-        xyr20 = self.xyr7_bn(xyr19)
-        xyr21 = self.xyr7_relu(xyr20)
-        
-        if self.residual:
-            xyr21 = xyr21 + xyr18
-        
-        xyr22 = self.xyr8_conv(xyr21)
-        xyr23 = self.xyr8_bn(xyr22)
-        xyr24 = self.xyr8_relu(xyr23)
-        
-        if self.residual:
-            xyr24 = xyr24 + xyr21
-        
-        xyr25 = self.xyr9_conv(xyr24)
-        xyr26 = self.xyr9_bn(xyr25)
-        xyr27 = self.xyr9_relu(xyr26)
-        
-        if self.residual:
-            xyr27 = xyr27 + xyr24
-        
-        xyr28 = self.xyr10_conv(xyr27)
-        xyr29 = self.xyr10_bn(xyr28)
-        xyr30 = self.xyr10_relu(xyr29)
-        
-        if self.residual:
-            xyr30 = xyr30 + xyr27
-        
-        xyr31 = self.xyr11_input(xyr30)
-        xyr32 = self.xyr11_linear(xyr31)
+        xyr_lin1 = self.xyr_input(dense_col[-1])
+        xyr_lin2 = self.xyr_linear(xyr_lin1)
 
         enc4 = self.enc4(torch.cat([center10, dec4], 1))
         enc3 = self.enc3(torch.cat([enc4, dec3], 1))
         enc2 = self.enc2(torch.cat([enc3, dec2], 1))
         enc1 = self.enc1(torch.cat([enc2, dec1], 1))
 
-        return self.final(enc1), xyr32
+        return self.final(enc1), xyr_lin2
         
-    def encode_xyr(self, x):
+    def encode_params(self, x):
         dec1 = self.first(x)
         dec2 = self.dec2(dec1)
         dec3 = self.dec3(dec2)
@@ -338,77 +289,16 @@ class UNet_radius_center_conv10(nn.Module):
         center9 = self.center3_bn(center8)
         center10 = self.center3_relu(center9)
         
-        xyr1 = self.xyr1_conv(center7)
-        xyr2 = self.xyr1_bn(xyr1)
-        xyr3 = self.xyr1_relu(xyr2)
+        xyr = [center7]
+        dense_col = [center7]
+        for i in range(self.n_convs):
+            xyr.append(self.xyr_convs[i](torch.cat(dense_col, 1)))
+            if self.dense_bn:
+                xyr.append(self.xyr_bns[i](xyr[-1]))
+            dense_col.append(self.xyr_relus[i](xyr[-1]))
+                
         
-        if self.residual:
-            xyr3 = xyr3 + center7
-        
-        xyr4 = self.xyr2_conv(xyr3)
-        xyr5 = self.xyr2_bn(xyr4)
-        xyr6 = self.xyr2_relu(xyr5)
-        
-        if self.residual:
-            xyr6 = xyr6 + xyr3
-        
-        xyr7 = self.xyr3_conv(xyr6)
-        xyr8 = self.xyr3_bn(xyr7)
-        xyr9 = self.xyr3_relu(xyr8)
-        
-        if self.residual:
-            xyr9 = xyr9 + xyr6
-        
-        xyr10 = self.xyr4_conv(xyr9)
-        xyr11 = self.xyr4_bn(xyr10)
-        xyr12 = self.xyr4_relu(xyr11)
-        
-        if self.residual:
-            xyr12 = xyr12 + xyr9
-        
-        xyr13 = self.xyr5_conv(xyr12)
-        xyr14 = self.xyr5_bn(xyr13)
-        xyr15 = self.xyr5_relu(xyr14)
-        
-        if self.residual:
-            xyr15 = xyr15 + xyr12
-            
-        xyr16 = self.xyr6_conv(xyr15)
-        xyr17 = self.xyr6_bn(xyr16)
-        xyr18 = self.xyr6_relu(xyr17)
-        
-        if self.residual:
-            xyr18 = xyr18 + xyr15
-        
-        xyr19 = self.xyr7_conv(xyr18)
-        xyr20 = self.xyr7_bn(xyr19)
-        xyr21 = self.xyr7_relu(xyr20)
-        
-        if self.residual:
-            xyr21 = xyr21 + xyr18
-        
-        xyr22 = self.xyr8_conv(xyr21)
-        xyr23 = self.xyr8_bn(xyr22)
-        xyr24 = self.xyr8_relu(xyr23)
-        
-        if self.residual:
-            xyr24 = xyr24 + xyr21
-        
-        xyr25 = self.xyr9_conv(xyr24)
-        xyr26 = self.xyr9_bn(xyr25)
-        xyr27 = self.xyr9_relu(xyr26)
-        
-        if self.residual:
-            xyr27 = xyr27 + xyr24
-        
-        xyr28 = self.xyr10_conv(xyr27)
-        xyr29 = self.xyr10_bn(xyr28)
-        xyr30 = self.xyr10_relu(xyr29)
-        
-        if self.residual:
-            xyr30 = xyr30 + xyr27
-        
-        xyr31 = self.xyr11_input(xyr30)
-        xyr32 = self.xyr11_linear(xyr31)
-        
-        return xyr32
+        xyr_lin1 = self.xyr_input(dense_col[-1])
+        xyr_lin2 = self.xyr_linear(xyr_lin1)
+
+        return xyr_lin2
