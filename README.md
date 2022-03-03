@@ -31,7 +31,7 @@ conda env create -f ccnet.yaml
 
 The python version has an updated pupil and iris circle estimator based on a modified CC-Net architecture. We provide a ROC curve for comparison between the different methods below.
 
-
+![](roc_curve_comparison.png)
 
 * `howto_mccnet.py` and `howto_pair_with_visualization_mccnet.py` shows how to use modified CC-Net architecture to estimate both the pupil and iris circle parameters and the masks.
 
