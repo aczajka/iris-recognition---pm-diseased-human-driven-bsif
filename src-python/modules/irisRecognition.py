@@ -97,7 +97,7 @@ class irisRecognition(object):
         self.clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(16,16))
         
     
-    ### Don't use this function if you want mixed functionality. When use_hough is False, this function uses both the circle approximation and the mask from MCCNet
+    ### Use this function for a faster estimation of mask and circle parameters. When use_hough is False, this function uses both the circle approximation and the mask from MCCNet
     def segment_and_circApprox(self, image):
         if self.use_hough:
             pred = self.segment(image)
