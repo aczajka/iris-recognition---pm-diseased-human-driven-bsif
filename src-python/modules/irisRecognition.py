@@ -12,11 +12,13 @@ from PIL import Image
 from skimage import img_as_bool
 import math
 from math import pi
+from modules.network import UNet_radius_center_denseconv
 
 class irisRecognition(object):
-    def __init__(self, cfg):
+    def __init__(self, cfg, use_hough=True):
 
         # cParsing the config file
+        self.use_hough = use_hough
         self.polar_height = cfg["polar_height"]
         self.polar_width = cfg["polar_width"]
         self.angles = angles = np.arange(0, 2 * np.pi, 2 * np.pi / self.polar_width)
@@ -29,17 +31,18 @@ class irisRecognition(object):
         self.num_filters = cfg["recog_num_filters"]
         self.max_shift = cfg["recog_max_shift"]
         self.cuda = cfg["cuda"]
-        self.cuda = cfg["gpu"]
+        self.mod_ccnet_model_path = cfg["modified_ccnet_model_path"]
         self.ccnet_model_path = cfg["ccnet_model_path"]
         self.filter = scipy.io.loadmat(cfg["recog_bsif_dir"]+'ICAtextureFilters_{0}x{1}_{2}bit.mat'.format(self.filter_size, self.filter_size, self.num_filters))['ICAtextureFilters']
-        self.iris_hough_param1 = cfg["iris_hough_param1"]
-        self.iris_hough_param2 = cfg["iris_hough_param2"]
-        self.iris_hough_margin = cfg["iris_hough_margin"]
-        self.pupil_hough_param1 = cfg["pupil_hough_param1"]
-        self.pupil_hough_param2 = cfg["pupil_hough_param2"]
-        self.pupil_hough_minimum = cfg["pupil_hough_minimum"]
-        self.pupil_iris_max_ratio = cfg["pupil_iris_max_ratio"]
-        self.max_pupil_iris_shift = cfg["max_pupil_iris_shift"]
+        if self.use_hough == True:
+            self.iris_hough_param1 = cfg["iris_hough_param1"]
+            self.iris_hough_param2 = cfg["iris_hough_param2"]
+            self.iris_hough_margin = cfg["iris_hough_margin"]
+            self.pupil_hough_param1 = cfg["pupil_hough_param1"]
+            self.pupil_hough_param2 = cfg["pupil_hough_param2"]
+            self.pupil_hough_minimum = cfg["pupil_hough_minimum"]
+            self.pupil_iris_max_ratio = cfg["pupil_iris_max_ratio"]
+            self.max_pupil_iris_shift = cfg["max_pupil_iris_shift"]
         self.visMinAgreedBits = cfg["vis_min_agreed_bits"]
         self.vis_mode = cfg["vis_mode"]
 
@@ -48,13 +51,19 @@ class irisRecognition(object):
         self.CCNET_NUM_CHANNELS = 1
         self.CCNET_NUM_CLASSES = 2
         self.model = UNet(self.CCNET_NUM_CLASSES, self.CCNET_NUM_CHANNELS)
+        self.mod_model = UNet_radius_center_denseconv(self.CCNET_NUM_CLASSES, self.CCNET_NUM_CHANNELS, num_params=6, width=8, n_convs=10, is_bn = False, dense_bn = False)
         if self.cuda:
-            torch.cuda.set_device(self.gpu)
-            self.model = model.cuda()
+            self.device = torch.device('cuda')
+            #torch.set_default_tensor_type('torch.cuda.FloatTensor')
+            self.model = self.model.cuda()
+            self.mod_model = self.mod_model.cuda()
+        else:
+            self.device = torch.device('cpu')
+            #torch.set_default_tensor_type('torch.FloatTensor')
         if self.ccnet_model_path:
             try:
                 if self.cuda:
-                    self.model.load_state_dict(torch.load(self.ccnet_model_path))
+                    self.model.load_state_dict(torch.load(self.ccnet_model_path, map_location=torch.device('cuda')))
                 else:
                     self.model.load_state_dict(torch.load(self.ccnet_model_path, map_location=torch.device('cpu')))
                     # print("model state loaded")
@@ -62,7 +71,21 @@ class irisRecognition(object):
                 print("assertion error")
                 self.model.load_state_dict(torch.load(self.ccnet_model_path,
                     map_location = lambda storage, loc: storage))
+        if not self.use_hough:
+            if self.mod_ccnet_model_path:
+                try:
+                    if self.cuda:
+                        self.mod_model.load_state_dict(torch.load(self.mod_ccnet_model_path, map_location=torch.device('cuda')))
+                    else:
+                        self.mod_model.load_state_dict(torch.load(self.mod_ccnet_model_path, map_location=torch.device('cpu')))
+                        # print("model state loaded")
+                except AssertionError:
+                    print("assertion error")
+                    self.mod_model.load_state_dict(torch.load(self.mod_ccnet_model_path,
+                        map_location = lambda storage, loc: storage))
+                
         self.model.eval()
+        self.mod_model.eval()
         self.softmax = nn.LogSoftmax(dim=1)
         self.input_transform = Compose([ToTensor(),])
         # print("irisRecognition class: initialized")
@@ -72,13 +95,65 @@ class irisRecognition(object):
         self.sk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(15,15))
         self.ISO_RES = (640,480)
         self.clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(16,16))
+        
+    
+    ### Use this function for a faster estimation of mask and circle parameters. When use_hough is False, this function uses both the circle approximation and the mask from MCCNet
+    def segment_and_circApprox(self, image):
+        if self.use_hough:
+            pred = self.segment(image)
+            pupil_xyr, iris_xyr = self.circApprox(pred)
+            return pred, pupil_xyr, iris_xyr
+        else:
+            w,h = image.size
+            image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_LINEAR)
+            w_mult = w/self.CCNET_INPUT_SIZE[0]
+            h_mult = h/self.CCNET_INPUT_SIZE[1]
+
+            outputs, inp_xyr_t = self.mod_model(Variable(self.input_transform(image).unsqueeze(0).to(self.device)))
+
+            #Circle params
+            inp_xyr = inp_xyr_t.tolist()[0]
+            pupil_x = int(inp_xyr[0] * w_mult)
+            pupil_y = int(inp_xyr[1] * h_mult)
+            pupil_r = int(inp_xyr[2] * max(w_mult, h_mult))
+            iris_x = int(inp_xyr[3] * w_mult)
+            iris_y = int(inp_xyr[4] * h_mult)
+            iris_r = int(inp_xyr[5] * max(w_mult, h_mult))
+
+            #Mask
+            logprob = self.softmax(outputs).data.cpu().numpy()
+            pred = np.argmax(logprob, axis=1)*255
+            pred = Image.fromarray(pred[0].astype(np.uint8))
+            pred = np.array(pred)
+        
+            # Optional: uncomment the following lines to take only the biggest blob returned by CCNet
+            '''
+            nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(pred, connectivity=4)
+            if nb_components > 1:
+                sizes = stats[:, -1] 
+                max_label = 1
+                max_size = sizes[1]    
+                for i in range(2, nb_components):
+                    if sizes[i] > max_size:
+                        max_label = i
+                        max_size = sizes[i]
+
+                pred = np.zeros(output.shape)
+                pred[output == max_label] = 255
+                pred = np.asarray(pred, dtype=np.uint8)
+            '''
+
+            # Resize the mask to the original image size
+            pred = img_as_bool(cv2.resize(np.array(pred), (w,h), cv2.INTER_NEAREST))
+
+            return pred, np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
 
     def segment(self,image):
 
         w,h = image.size
-        image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_CUBIC)
+        image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_LINEAR)
 
-        outputs = self.model(Variable(self.input_transform(image).unsqueeze(0)))
+        outputs = self.model(Variable(self.input_transform(image).unsqueeze(0).to(self.device)))
         logprob = self.softmax(outputs).data.cpu().numpy()
         pred = np.argmax(logprob, axis=1)*255
         pred = Image.fromarray(pred[0].astype(np.uint8))
@@ -117,48 +192,132 @@ class irisRecognition(object):
         return imVis
 
 
-    def circApprox(self,mask):
+    def circApprox(self,mask=None,image=None):
+        if self.use_hough and mask is None:
+            print('Please provide mask if you want to use hough transform')
+        if (not self.use_hough) and image is None:
+            print('Please provide image if you want to use the mccnet model') 
+        if self.use_hough and (mask is not None):
+            # Iris boundary approximation
+            mask_for_iris = 255*(1 - np.uint8(mask))
+            iris_indices = np.where(mask_for_iris == 0)
+            if len(iris_indices[0]) == 0:
+                return None, None
+            y_span = max(iris_indices[0]) - min(iris_indices[0])
+            x_span = max(iris_indices[1]) - min(iris_indices[1])
 
-        # Iris boundary approximation
-        mask_for_iris = 255*(1 - np.uint8(mask))
-        iris_indices = np.where(mask_for_iris == 0)
-        if len(iris_indices[0]) == 0:
-            return None, None
-        y_span = max(iris_indices[0]) - min(iris_indices[0])
-        x_span = max(iris_indices[1]) - min(iris_indices[1])
+            iris_radius_estimate = np.max((x_span,y_span)) // 2
+            iris_circle = cv2.HoughCircles(mask_for_iris, cv2.HOUGH_GRADIENT, 1, 50,
+                                        param1=self.iris_hough_param1,
+                                        param2=self.iris_hough_param2,
+                                        minRadius=iris_radius_estimate-self.iris_hough_margin,
+                                        maxRadius=iris_radius_estimate+self.iris_hough_margin)
+            if iris_circle is None:
+                return None, None
+            iris_x, iris_y, iris_r = np.rint(np.array(iris_circle[0][0])).astype(int)
+            
+            
+            # Pupil boundary approximation
+            pupil_circle = cv2.HoughCircles(mask_for_iris, cv2.HOUGH_GRADIENT, 1, 50,
+                                            param1=self.pupil_hough_param1,
+                                            param2=self.pupil_hough_param2,
+                                            minRadius=self.pupil_hough_minimum,
+                                            maxRadius=np.int(self.pupil_iris_max_ratio*iris_r))
+            if pupil_circle is None:
+                return None, None
+            pupil_x, pupil_y, pupil_r = np.rint(np.array(pupil_circle[0][0])).astype(int)
+            
+            if np.sqrt((pupil_x-iris_x)**2+(pupil_y-iris_y)**2) > self.max_pupil_iris_shift:
+                pupil_x = iris_x
+                pupil_y = iris_y
+                pupil_r = iris_r // 3
 
-        iris_radius_estimate = np.max((x_span,y_span)) // 2
-        iris_circle = cv2.HoughCircles(mask_for_iris, cv2.HOUGH_GRADIENT, 1, 50,
-                                       param1=self.iris_hough_param1,
-                                       param2=self.iris_hough_param2,
-                                       minRadius=iris_radius_estimate-self.iris_hough_margin,
-                                       maxRadius=iris_radius_estimate+self.iris_hough_margin)
-        if iris_circle is None:
-            return None, None
-        iris_x, iris_y, iris_r = np.rint(np.array(iris_circle[0][0])).astype(int)
+            return np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
+        elif (not self.use_hough) and (image is not None):
+            w,h = image.size
+            image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_CUBIC)
+            w_mult = w/self.CCNET_INPUT_SIZE[0]
+            h_mult = h/self.CCNET_INPUT_SIZE[1]
+
+            outputs, inp_xyr_t = self.mod_model(Variable(self.input_transform(image).unsqueeze(0).to(self.device)))
+
+            #Circle params
+            inp_xyr = inp_xyr_t.tolist()[0]
+            pupil_x = round(inp_xyr[0] * w_mult)
+            pupil_y = round(inp_xyr[1] * h_mult)
+            pupil_r = round(inp_xyr[2] * max(w_mult, h_mult))
+            iris_x = round(inp_xyr[3] * w_mult)
+            iris_y = round(inp_xyr[4] * h_mult)
+            iris_r = round(inp_xyr[5] * max(w_mult, h_mult))
+
+            return np.array([pupil_x,pupil_y,pupil_r]).astype(int), np.array([iris_x,iris_y,iris_r]).astype(int)
+
+    
+    def grid_sample(self, input, grid, interp_mode='bilinear'):
+
+        # grid: [-1, 1]
+        N, C, H, W = input.shape
+        gridx = grid[:, :, :, 0]
+        gridy = grid[:, :, :, 1]
+        gridx = ((gridx + 1) / 2 * W - 0.5) / (W - 1) * 2 - 1
+        gridy = ((gridy + 1) / 2 * H - 0.5) / (H - 1) * 2 - 1
+        newgrid = torch.stack([gridx, gridy], dim=-1)
+        return torch.nn.functional.grid_sample(input, newgrid, mode=interp_mode, align_corners=True)
         
-        
-        # Pupil boundary approximation
-        pupil_circle = cv2.HoughCircles(mask_for_iris, cv2.HOUGH_GRADIENT, 1, 50,
-                                        param1=self.pupil_hough_param1,
-                                        param2=self.pupil_hough_param2,
-                                        minRadius=self.pupil_hough_minimum,
-                                        maxRadius=np.int(self.pupil_iris_max_ratio*iris_r))
-        if pupil_circle is None:
-            return None, None
-        pupil_x, pupil_y, pupil_r = np.rint(np.array(pupil_circle[0][0])).astype(int)
-        
-        if np.sqrt((pupil_x-iris_x)**2+(pupil_y-iris_y)**2) > self.max_pupil_iris_shift:
-            pupil_x = iris_x
-            pupil_y = iris_y
-            pupil_r = iris_r // 3
-        
-        return np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
-
-
-
-    # Rubbersheet model-based Cartesian-to-polar transformation
+    # Rubbersheet model-based Cartesian-to-polar transformation using bilinear interpolation from torch grid sample
     def cartToPol(self, image, mask, pupil_xyr, iris_xyr):
+
+        if pupil_xyr is None or iris_xyr is None:
+            return None, None
+        
+        image = ToTensor()(image).unsqueeze(0) * 255
+        mask = torch.tensor(mask).float().unsqueeze(0).unsqueeze(0)
+        width = image.shape[3]
+        height = image.shape[2]
+
+        polar_height = self.polar_height
+        polar_width = self.polar_width
+
+        pupil_xyr = torch.tensor(pupil_xyr).unsqueeze(0).float()
+        iris_xyr = torch.tensor(iris_xyr).unsqueeze(0).float()
+        
+        theta = (2*pi*torch.linspace(1,polar_width,polar_width)/polar_width)
+        pxCirclePoints = pupil_xyr[:, 0].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width) #b x 512
+        pyCirclePoints = pupil_xyr[:, 1].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)  #b x 512
+        
+        ixCirclePoints = iris_xyr[:, 0].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)  #b x 512
+        iyCirclePoints = iris_xyr[:, 1].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)  #b x 512
+
+        radius = (torch.linspace(0,polar_height,polar_height)/polar_height).reshape(-1, 1)  #64 x 1
+        
+        pxCoords = torch.matmul((1-radius), pxCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
+        pyCoords = torch.matmul((1-radius), pyCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
+        
+        ixCoords = torch.matmul(radius, ixCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
+        iyCoords = torch.matmul(radius, iyCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
+
+        x = torch.clamp(pxCoords + ixCoords, 0, width-1).float()
+        x_norm = (x/(width-1))*2 - 1 #b x 64 x 512
+
+        y = torch.clamp(pyCoords + iyCoords, 0, height-1).float()
+        y_norm = (y/(height-1))*2 - 1  #b x 64 x 512
+
+        grid_sample_mat = torch.cat([x_norm.unsqueeze(-1), y_norm.unsqueeze(-1)], dim=-1)
+
+        image_polar = self.grid_sample(image, grid_sample_mat, interp_mode='bilinear')
+        image_polar = torch.clamp(torch.round(image_polar), min=0, max=255)
+        mask_polar = self.grid_sample(mask, grid_sample_mat, interp_mode='nearest')
+        mask_polar = (mask_polar>0.5).long() * 255
+
+        return (image_polar[0][0].cpu().numpy()).astype(np.uint8), mask_polar[0][0].cpu().numpy().astype(np.uint8)
+
+    '''
+    # Previous implementation that uses nearest neighbor interpolation
+    # Rubbersheet model-based Cartesian-to-polar transformation
+    def cartToPol_prev(self, image, mask, pupil_xyr, iris_xyr):
+        
+        if pupil_xyr is None:
+            return None, None
        
         image = np.array(image)
         height, width = image.shape
@@ -185,10 +344,13 @@ class irisRecognition(object):
                     mask_polar[i][j] = 255*mask[y[i]][x[i]]
 
         return image_polar, mask_polar
-
-
+    
+    '''
     # Iris code
     def extractCode(self, polar):
+        
+        if polar is None:
+            return None
         
         # Wrap image
         r = int(np.floor(self.filter_size / 2));
@@ -301,4 +463,3 @@ class irisRecognition(object):
             raise Exception("Unknown visualization mode")
 
         return imVis
-

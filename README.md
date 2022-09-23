@@ -29,6 +29,15 @@ conda env create -f ccnet.yaml
 * `howto.py`, which - as an example - encodes and matches three post-mortem samples from the Warsaw dataset
 * `howto_pair_with_visualization.py`, which demonstrates how to match a pair of images and get visualizations annotating salient regions within iris annulus
 
+The python version has an updated pupil and iris circle estimator based on a modified CC-Net architecture. We provide a ROC curve for comparison between the different methods below. (The roc curve for MCCNet coincides with the mixed version)
+
+![](roc_curve_comparison.png)
+
+* `howto_mccnet.py` and `howto_pair_with_visualization_mccnet.py` shows how to use modified CC-Net architecture to estimate both the pupil and iris circle parameters and the masks.
+
+* `howto_mixed.py` and `howto_pair_with_visualization_mixed.py` shows how to use modified CC-Net architecture to estimate the pupil and iris circle parameters and use the original CC-Net architecture to find the masks.
+
+
 ![](vis_example.png)
 
 # Database
