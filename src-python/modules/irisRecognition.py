@@ -253,7 +253,9 @@ class irisRecognition(object):
             return np.array([pupil_x,pupil_y,pupil_r]).astype(int), np.array([iris_x,iris_y,iris_r]).astype(int)
 
     
-    def grid_sample(self, input, grid, interp_mode='bilinear'):
+        
+    # Rubbersheet model-based Cartesian-to-polar transformation utilizing gpu, can use bilinear interpolation as well.
+    def grid_sample(self, input, grid, interp_mode):  #helper function
 
         # grid: [-1, 1]
         N, C, H, W = input.shape
@@ -263,32 +265,31 @@ class irisRecognition(object):
         gridy = ((gridy + 1) / 2 * H - 0.5) / (H - 1) * 2 - 1
         newgrid = torch.stack([gridx, gridy], dim=-1)
         return torch.nn.functional.grid_sample(input, newgrid, mode=interp_mode, align_corners=True)
-        
-    # Rubbersheet model-based Cartesian-to-polar transformation using bilinear interpolation from torch grid sample
-    def cartToPol(self, image, mask, pupil_xyr, iris_xyr):
+    
+    def cartToPol_gpu(self, image, mask, pupil_xyr, iris_xyr, interpolation='nearest'):
 
         if pupil_xyr is None or iris_xyr is None:
             return None, None
         
-        image = ToTensor()(image).unsqueeze(0) * 255
-        mask = torch.tensor(mask).float().unsqueeze(0).unsqueeze(0)
+        image = ToTensor()(np.array(image)).float().unsqueeze(0).to(self.device)
+        mask = torch.tensor(np.array(mask)).float().unsqueeze(0).unsqueeze(0).to(self.device)
         width = image.shape[3]
         height = image.shape[2]
 
         polar_height = self.polar_height
         polar_width = self.polar_width
 
-        pupil_xyr = torch.tensor(pupil_xyr).unsqueeze(0).float()
-        iris_xyr = torch.tensor(iris_xyr).unsqueeze(0).float()
+        pupil_xyr = torch.tensor(pupil_xyr).unsqueeze(0).float().to(self.device)
+        iris_xyr = torch.tensor(iris_xyr).unsqueeze(0).float().to(self.device)
         
-        theta = (2*pi*torch.linspace(1,polar_width,polar_width)/polar_width)
-        pxCirclePoints = pupil_xyr[:, 0].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width) #b x 512
-        pyCirclePoints = pupil_xyr[:, 1].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)  #b x 512
+        theta = (2*pi*torch.linspace(0,polar_width-1,polar_width)/polar_width).to(self.device)
+        pxCirclePoints = torch.round(pupil_xyr[:, 0].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device) #b x 512
+        pyCirclePoints = torch.round(pupil_xyr[:, 1].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device)  #b x 512
         
-        ixCirclePoints = iris_xyr[:, 0].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)  #b x 512
-        iyCirclePoints = iris_xyr[:, 1].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)  #b x 512
+        ixCirclePoints = torch.round(iris_xyr[:, 0].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device)  #b x 512
+        iyCirclePoints = torch.round(iris_xyr[:, 1].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device) #b x 512
 
-        radius = (torch.linspace(0,polar_height,polar_height)/polar_height).reshape(-1, 1)  #64 x 1
+        radius = (torch.linspace(1,polar_height,polar_height)/polar_height).reshape(-1, 1).to(self.device)  #64 x 1
         
         pxCoords = torch.matmul((1-radius), pxCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
         pyCoords = torch.matmul((1-radius), pyCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
@@ -296,23 +297,55 @@ class irisRecognition(object):
         ixCoords = torch.matmul(radius, ixCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
         iyCoords = torch.matmul(radius, iyCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
 
-        x = torch.clamp(pxCoords + ixCoords, 0, width-1).float()
-        x_norm = (x/(width-1))*2 - 1 #b x 64 x 512
+        x = (pxCoords + ixCoords).float()
+        x_norm = ((x-1)/(width-1))*2 - 1 #b x 64 x 512
 
-        y = torch.clamp(pyCoords + iyCoords, 0, height-1).float()
-        y_norm = (y/(height-1))*2 - 1  #b x 64 x 512
+        y = (pyCoords + iyCoords).float()
+        y_norm = ((y-1)/(height-1))*2 - 1  #b x 64 x 512
 
-        grid_sample_mat = torch.cat([x_norm.unsqueeze(-1), y_norm.unsqueeze(-1)], dim=-1)
+        grid_sample_mat = torch.cat([x_norm.unsqueeze(-1), y_norm.unsqueeze(-1)], dim=-1).to(self.device)
 
-        image_polar = self.grid_sample(image, grid_sample_mat, interp_mode='bilinear')
+        image_polar = self.grid_sample(image, grid_sample_mat, interp_mode=interpolation)
         image_polar = torch.clamp(torch.round(image_polar), min=0, max=255)
-        mask_polar = self.grid_sample(mask, grid_sample_mat, interp_mode='nearest')
+        mask_polar = self.grid_sample(mask, grid_sample_mat, interp_mode='nearest') #no use using bilinear for interpolation in mask
         mask_polar = (mask_polar>0.5).long() * 255
 
         return (image_polar[0][0].cpu().numpy()).astype(np.uint8), mask_polar[0][0].cpu().numpy().astype(np.uint8)
+    
+    # Rubbersheet model-based Cartesian-to-polar transformation uses nearest neighbor interpolation
+    def cartToPol(self, image, mask, pupil_xyr, iris_xyr):
+        
+        if pupil_xyr is None:
+            return None, None
+       
+        image = np.array(image)
+        height, width = image.shape
+        mask = np.array(mask)
 
+        image_polar = np.zeros((self.polar_height, self.polar_width), np.uint8)
+        mask_polar = np.zeros((self.polar_height, self.polar_width), np.uint8)
+
+        theta = 2*pi*np.linspace(0,self.polar_width-1,self.polar_width)/self.polar_width
+       
+        pxCirclePoints = np.around(pupil_xyr[0] + pupil_xyr[2]*np.cos(theta))    
+        ixCirclePoints = np.around(iris_xyr[0] + iris_xyr[2]*np.cos(theta))
+        pyCirclePoints = np.around(pupil_xyr[1] + pupil_xyr[2]*np.sin(theta))
+        iyCirclePoints = np.around(iris_xyr[1] + iris_xyr[2]*np.sin(theta))
+
+        for j in range(1, self.polar_width+1):            
+            for i in range(1, self.polar_height+1):
+
+                radius = i/self.polar_height
+                x = int(np.around((1-radius) * pxCirclePoints[j-1] + radius * ixCirclePoints[j-1]))
+                y = int(np.around((1-radius) * pyCirclePoints[j-1] + radius * iyCirclePoints[j-1]))
+                if (x > 0 and x <= width and y > 0 and y <= height): 
+                    image_polar[i-1][j-1] = image[y-1][x-1]
+                    mask_polar[i-1][j-1] = 255*mask[y-1][x-1]
+
+        return image_polar, mask_polar
+    
     '''
-    # Previous implementation that uses nearest neighbor interpolation
+    # Previous implementation which is removed due to mismatch with MATLAB
     # Rubbersheet model-based Cartesian-to-polar transformation
     def cartToPol_prev(self, image, mask, pupil_xyr, iris_xyr):
         
