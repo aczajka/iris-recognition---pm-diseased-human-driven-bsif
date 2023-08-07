@@ -38,7 +38,7 @@ def main(cfg):
         iris_xyr_list.append(iris_xyr)
 
         # cartesian to polar transformation:
-        im_polar, mask_polar = irisRec.cartToPol(im, mask, pupil_xyr, iris_xyr)
+        im_polar, mask_polar = irisRec.cartToPol_torch(im, mask, pupil_xyr, iris_xyr)
         polar_mask_list.append(mask_polar)
 
         # human-driven BSIF encoding:
