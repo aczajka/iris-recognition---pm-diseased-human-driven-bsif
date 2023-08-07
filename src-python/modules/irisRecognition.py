@@ -214,7 +214,7 @@ class irisRecognition(object):
             return np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
         elif (not self.use_hough) and (image is not None):
             w,h = image.size
-            image = cv2.resize(np.array(image), self.NET_INPUT_SIZE, cv2.INTER_LINEAR_EXACT)
+            image = cv2.resize(np.array(image), self.NET_INPUT_SIZE, cv2.INTER_CUBIC)
             w_mult = w/self.NET_INPUT_SIZE[0]
             h_mult = h/self.NET_INPUT_SIZE[1]
             with torch.no_grad():
