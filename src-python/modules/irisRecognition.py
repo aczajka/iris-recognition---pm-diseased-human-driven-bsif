@@ -2,38 +2,41 @@ import numpy as np
 import cv2
 import scipy.io, scipy.signal
 import argparse
-from modules.network import UNet
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from torchvision.transforms import Compose
-from torchvision.transforms import ToTensor
+from torchvision.transforms import Compose, ToTensor, Normalize
 from PIL import Image
 from skimage import img_as_bool
 import math
 from math import pi
-from modules.network import UNet_radius_center_denseconv
+from modules.network import UNet, NestedSharedAtrousResUNet, NestedResUNetParam
 
 class irisRecognition(object):
     def __init__(self, cfg, use_hough=True):
+        
 
         # cParsing the config file
         self.use_hough = use_hough
         self.polar_height = cfg["polar_height"]
         self.polar_width = cfg["polar_width"]
-        self.angles = angles = np.arange(0, 2 * np.pi, 2 * np.pi / self.polar_width)
-        self.cos_angles = np.zeros((self.polar_width))
-        self.sin_angles = np.zeros((self.polar_width))
-        for i in range(self.polar_width):
-            self.cos_angles[i] = np.cos(self.angles[i])
-            self.sin_angles[i] = np.sin(self.angles[i])
         self.filter_size = cfg["recog_filter_size"]
         self.num_filters = cfg["recog_num_filters"]
         self.max_shift = cfg["recog_max_shift"]
         self.cuda = cfg["cuda"]
-        self.mod_ccnet_model_path = cfg["modified_ccnet_model_path"]
+        if self.cuda:
+            self.device = torch.device('cuda')
+        else:
+            self.device = torch.device('cpu')
+        self.mask_model_path = cfg["mask_model_path"]
+        self.circle_model_path = cfg["circle_model_path"]
         self.ccnet_model_path = cfg["ccnet_model_path"]
-        self.filter = scipy.io.loadmat(cfg["recog_bsif_dir"]+'ICAtextureFilters_{0}x{1}_{2}bit.mat'.format(self.filter_size, self.filter_size, self.num_filters))['ICAtextureFilters']
+        filter_mat = scipy.io.loadmat(cfg["recog_bsif_dir"]+'ICAtextureFilters_{0}x{1}_{2}bit.mat'.format(self.filter_size, self.filter_size, self.num_filters))['ICAtextureFilters']
+        self.filter_size = filter_mat.shape[0]
+        self.num_filters = filter_mat.shape[2]
+        with torch.no_grad():
+            self.torch_filter = torch.FloatTensor(filter_mat).to(self.device)
+            self.torch_filter = torch.moveaxis(self.torch_filter.unsqueeze(0), 3, 0).detach().requires_grad_(False)
         if self.use_hough == True:
             self.iris_hough_param1 = cfg["iris_hough_param1"]
             self.iris_hough_param2 = cfg["iris_hough_param2"]
@@ -45,50 +48,60 @@ class irisRecognition(object):
             self.max_pupil_iris_shift = cfg["max_pupil_iris_shift"]
         self.visMinAgreedBits = cfg["vis_min_agreed_bits"]
         self.vis_mode = cfg["vis_mode"]
-
+        self.NET_INPUT_SIZE = (320,240)
         # Loading the CCNet
-        self.CCNET_INPUT_SIZE = (320,240)
-        self.CCNET_NUM_CHANNELS = 1
-        self.CCNET_NUM_CLASSES = 2
-        self.model = UNet(self.CCNET_NUM_CLASSES, self.CCNET_NUM_CHANNELS)
-        self.mod_model = UNet_radius_center_denseconv(self.CCNET_NUM_CLASSES, self.CCNET_NUM_CHANNELS, num_params=6, width=8, n_convs=10, is_bn = False, dense_bn = False)
-        if self.cuda:
-            self.device = torch.device('cuda')
-            #torch.set_default_tensor_type('torch.cuda.FloatTensor')
-            self.model = self.model.cuda()
-            self.mod_model = self.mod_model.cuda()
-        else:
-            self.device = torch.device('cpu')
-            #torch.set_default_tensor_type('torch.FloatTensor')
-        if self.ccnet_model_path:
-            try:
-                if self.cuda:
-                    self.model.load_state_dict(torch.load(self.ccnet_model_path, map_location=torch.device('cuda')))
-                else:
-                    self.model.load_state_dict(torch.load(self.ccnet_model_path, map_location=torch.device('cpu')))
-                    # print("model state loaded")
-            except AssertionError:
-                print("assertion error")
-                self.model.load_state_dict(torch.load(self.ccnet_model_path,
-                    map_location = lambda storage, loc: storage))
         if not self.use_hough:
-            if self.mod_ccnet_model_path:
+            if self.mask_model_path and self.circle_model_path:
+                self.circle_model = NestedResUNetParam(1, 6)
+                try:
+                    self.circle_model.load_state_dict(torch.load(self.circle_model_path, map_location=self.device))
+                except AssertionError:
+                        print("assertion error")
+                        self.circle_model.load_state_dict(torch.load(self.circle_model_path,
+                            map_location = lambda storage, loc: storage))
+                self.circle_model = self.circle_model.to(self.device)
+                self.circle_model.eval()
+                self.mask_model = NestedSharedAtrousResUNet(1, 1)
+                try:
+                    self.mask_model.load_state_dict(torch.load(self.mask_model_path, map_location=self.device))
+                except AssertionError:
+                        print("assertion error")
+                        self.mask_model.load_state_dict(torch.load(self.mask_model_path,
+                            map_location = lambda storage, loc: storage))
+                self.mask_model = self.mask_model.to(self.device)
+                self.mask_model.eval()
+                self.input_transform_mask = Compose([
+                    ToTensor(),
+                    #Normalize(mean=(0.5791223733793273,), std=(0.21176097694558188,))
+                    Normalize(mean=(0.5,), std=(0.5,))
+                ])
+                self.input_transform_circ = Compose([
+                    ToTensor(),
+                    Normalize(mean=(0.5791223733793273,), std=(0.21176097694558188,))
+                    #Normalize(mean=(0.5,), std=(0.5,))
+                ])
+        else:
+            self.CCNET_NUM_CHANNELS = 1
+            self.CCNET_NUM_CLASSES = 2
+            self.model = UNet(self.CCNET_NUM_CLASSES, self.CCNET_NUM_CHANNELS)
+            if self.ccnet_model_path:
                 try:
                     if self.cuda:
-                        self.mod_model.load_state_dict(torch.load(self.mod_ccnet_model_path, map_location=torch.device('cuda')))
+                        self.model.load_state_dict(torch.load(self.ccnet_model_path, map_location=torch.device('cuda')))
                     else:
-                        self.mod_model.load_state_dict(torch.load(self.mod_ccnet_model_path, map_location=torch.device('cpu')))
+                        self.model.load_state_dict(torch.load(self.ccnet_model_path, map_location=torch.device('cpu')))
                         # print("model state loaded")
                 except AssertionError:
                     print("assertion error")
-                    self.mod_model.load_state_dict(torch.load(self.mod_ccnet_model_path,
+                    self.model.load_state_dict(torch.load(self.ccnet_model_path,
                         map_location = lambda storage, loc: storage))
-                
-        self.model.eval()
-        self.mod_model.eval()
+            else:
+                print("Please provide the CCNet model weight.")
+            self.model.eval()
+            
+        
         self.softmax = nn.LogSoftmax(dim=1)
         self.input_transform = Compose([ToTensor(),])
-        # print("irisRecognition class: initialized")
 
         # Misc
         self.se = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7))
@@ -99,33 +112,21 @@ class irisRecognition(object):
     
     ### Use this function for a faster estimation of mask and circle parameters. When use_hough is False, this function uses both the circle approximation and the mask from MCCNet
     def segment_and_circApprox(self, image):
+        pred = self.segment(image)
+        pupil_xyr, iris_xyr = self.circApprox(pred, image)
+        return pred, pupil_xyr, iris_xyr
+
+    def segment(self,image):
         if self.use_hough:
-            pred = self.segment(image)
-            pupil_xyr, iris_xyr = self.circApprox(pred)
-            return pred, pupil_xyr, iris_xyr
-        else:
             w,h = image.size
-            image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_LINEAR)
-            w_mult = w/self.CCNET_INPUT_SIZE[0]
-            h_mult = h/self.CCNET_INPUT_SIZE[1]
-
-            outputs, inp_xyr_t = self.mod_model(Variable(self.input_transform(image).unsqueeze(0).to(self.device)))
-
-            #Circle params
-            inp_xyr = inp_xyr_t.tolist()[0]
-            pupil_x = int(inp_xyr[0] * w_mult)
-            pupil_y = int(inp_xyr[1] * h_mult)
-            pupil_r = int(inp_xyr[2] * max(w_mult, h_mult))
-            iris_x = int(inp_xyr[3] * w_mult)
-            iris_y = int(inp_xyr[4] * h_mult)
-            iris_r = int(inp_xyr[5] * max(w_mult, h_mult))
-
-            #Mask
+            image = cv2.resize(np.array(image), self.NET_INPUT_SIZE, cv2.INTER_LINEAR)
+            with torch.no_grad():
+                outputs = self.model(Variable(self.input_transform(image).unsqueeze(0).to(self.device)))
             logprob = self.softmax(outputs).data.cpu().numpy()
             pred = np.argmax(logprob, axis=1)*255
             pred = Image.fromarray(pred[0].astype(np.uint8))
             pred = np.array(pred)
-        
+
             # Optional: uncomment the following lines to take only the biggest blob returned by CCNet
             '''
             nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(pred, connectivity=4)
@@ -144,42 +145,20 @@ class irisRecognition(object):
             '''
 
             # Resize the mask to the original image size
-            pred = img_as_bool(cv2.resize(np.array(pred), (w,h), cv2.INTER_NEAREST))
+            pred = img_as_bool(cv2.resize(np.array(pred), (w,h), cv2.INTER_NEAREST_EXACT))
 
-            return pred, np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
+            return pred
+        else:
+            w,h = image.size
+            image = cv2.resize(np.array(image), self.NET_INPUT_SIZE, cv2.INTER_CUBIC)
+            with torch.no_grad():
+                mask_logit_t = self.mask_model(Variable(self.input_transform_mask(image).unsqueeze(0).to(self.device)))[0]
+                mask_t = torch.where(torch.sigmoid(mask_logit_t) > 0.5, 255, 0)
+            mask = mask_t.cpu().numpy()[0]
+            mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST_EXACT)
+            #print('Mask Shape: ', mask.shape)
 
-    def segment(self,image):
-
-        w,h = image.size
-        image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_LINEAR)
-
-        outputs = self.model(Variable(self.input_transform(image).unsqueeze(0).to(self.device)))
-        logprob = self.softmax(outputs).data.cpu().numpy()
-        pred = np.argmax(logprob, axis=1)*255
-        pred = Image.fromarray(pred[0].astype(np.uint8))
-        pred = np.array(pred)
-
-        # Optional: uncomment the following lines to take only the biggest blob returned by CCNet
-        '''
-        nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(pred, connectivity=4)
-        if nb_components > 1:
-            sizes = stats[:, -1] 
-            max_label = 1
-            max_size = sizes[1]    
-            for i in range(2, nb_components):
-                if sizes[i] > max_size:
-                    max_label = i
-                    max_size = sizes[i]
-
-            pred = np.zeros(output.shape)
-            pred[output == max_label] = 255
-            pred = np.asarray(pred, dtype=np.uint8)
-        '''
-
-        # Resize the mask to the original image size
-        pred = img_as_bool(cv2.resize(np.array(pred), (w,h), cv2.INTER_NEAREST))
-
-        return pred
+            return mask
 
 
     def segmentVis(self,im,mask,pupil_xyr,iris_xyr):
@@ -235,27 +214,25 @@ class irisRecognition(object):
             return np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
         elif (not self.use_hough) and (image is not None):
             w,h = image.size
-            image = cv2.resize(np.array(image), self.CCNET_INPUT_SIZE, cv2.INTER_CUBIC)
-            w_mult = w/self.CCNET_INPUT_SIZE[0]
-            h_mult = h/self.CCNET_INPUT_SIZE[1]
-
-            outputs, inp_xyr_t = self.mod_model(Variable(self.input_transform(image).unsqueeze(0).to(self.device)))
+            image = cv2.resize(np.array(image), self.NET_INPUT_SIZE, cv2.INTER_LINEAR_EXACT)
+            w_mult = w/self.NET_INPUT_SIZE[0]
+            h_mult = h/self.NET_INPUT_SIZE[1]
+            with torch.no_grad():
+                inp_xyr_t = self.circle_model(Variable(self.input_transform_circ(image).unsqueeze(0).to(self.device)))
 
             #Circle params
             inp_xyr = inp_xyr_t.tolist()[0]
-            pupil_x = round(inp_xyr[0] * w_mult)
-            pupil_y = round(inp_xyr[1] * h_mult)
-            pupil_r = round(inp_xyr[2] * max(w_mult, h_mult))
-            iris_x = round(inp_xyr[3] * w_mult)
-            iris_y = round(inp_xyr[4] * h_mult)
-            iris_r = round(inp_xyr[5] * max(w_mult, h_mult))
+            pupil_x = int(inp_xyr[0] * w_mult)
+            pupil_y = int(inp_xyr[1] * h_mult)
+            pupil_r = int(inp_xyr[2] * max(w_mult, h_mult))
+            iris_x = int(inp_xyr[3] * w_mult)
+            iris_y = int(inp_xyr[4] * h_mult)
+            iris_r = int(inp_xyr[5] * max(w_mult, h_mult))
 
-            return np.array([pupil_x,pupil_y,pupil_r]).astype(int), np.array([iris_x,iris_y,iris_r]).astype(int)
-
+            return np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
     
-        
-    # Rubbersheet model-based Cartesian-to-polar transformation utilizing gpu, can use bilinear interpolation as well.
-    def grid_sample(self, input, grid, interp_mode):  #helper function
+    # New Rubbersheet model-based Cartesian-to-polar transformation. It has support for bilinear interpolation
+    def grid_sample(self, input, grid, interp_mode):  #helper function for new interpolation
 
         # grid: [-1, 1]
         N, C, H, W = input.shape
@@ -265,54 +242,53 @@ class irisRecognition(object):
         gridy = ((gridy + 1) / 2 * H - 0.5) / (H - 1) * 2 - 1
         newgrid = torch.stack([gridx, gridy], dim=-1)
         return torch.nn.functional.grid_sample(input, newgrid, mode=interp_mode, align_corners=True)
+
+    def cartToPol_torch(self, image, mask, pupil_xyr, iris_xyr, interpolation='bilinear'): # 
+        with torch.no_grad():
+            if pupil_xyr is None or iris_xyr is None:
+                return None, None
+            
+            image = torch.tensor(np.array(image)).float().unsqueeze(0).unsqueeze(0).to(self.device)
+            mask = torch.tensor(np.array(mask)).float().unsqueeze(0).unsqueeze(0).to(self.device)
+            width = image.shape[3]
+            height = image.shape[2]
+
+            polar_height = self.polar_height
+            polar_width = self.polar_width
+            pupil_xyr = torch.tensor(pupil_xyr).unsqueeze(0).float().to(self.device)
+            iris_xyr = torch.tensor(iris_xyr).unsqueeze(0).float().to(self.device)
+            
+            theta = (2*pi*torch.linspace(0,polar_width-1,polar_width)/polar_width).to(self.device)
+            pxCirclePoints = torch.round(pupil_xyr[:, 0].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device) #b x 512
+            pyCirclePoints = torch.round(pupil_xyr[:, 1].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device)  #b x 512
+            
+            ixCirclePoints = torch.round(iris_xyr[:, 0].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device)  #b x 512
+            iyCirclePoints = torch.round(iris_xyr[:, 1].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device) #b x 512
+
+            radius = (torch.linspace(1,polar_height,polar_height)/polar_height).reshape(-1, 1).to(self.device)  #64 x 1
+            
+            pxCoords = torch.matmul((1-radius), pxCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
+            pyCoords = torch.matmul((1-radius), pyCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
+            
+            ixCoords = torch.matmul(radius, ixCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
+            iyCoords = torch.matmul(radius, iyCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
+
+            x = (pxCoords + ixCoords).float()
+            x_norm = ((x-1)/(width-1))*2 - 1 #b x 64 x 512
+
+            y = (pyCoords + iyCoords).float()
+            y_norm = ((y-1)/(height-1))*2 - 1  #b x 64 x 512
+
+            grid_sample_mat = torch.cat([x_norm.unsqueeze(-1), y_norm.unsqueeze(-1)], dim=-1).to(self.device)
+
+            image_polar = self.grid_sample(image, grid_sample_mat, interp_mode=interpolation)
+            image_polar = torch.clamp(torch.round(image_polar), min=0, max=255)
+            mask_polar = self.grid_sample(mask, grid_sample_mat, interp_mode='nearest') #no use using bilinear for interpolation in mask
+            mask_polar = (mask_polar>0.5).long() * 255
+
+            return (image_polar[0][0].cpu().numpy()).astype(np.uint8), mask_polar[0][0].cpu().numpy().astype(np.uint8)
     
-    def cartToPol_gpu(self, image, mask, pupil_xyr, iris_xyr, interpolation='nearest'):
-
-        if pupil_xyr is None or iris_xyr is None:
-            return None, None
-        
-        image = ToTensor()(np.array(image)).float().unsqueeze(0).to(self.device)
-        mask = torch.tensor(np.array(mask)).float().unsqueeze(0).unsqueeze(0).to(self.device)
-        width = image.shape[3]
-        height = image.shape[2]
-
-        polar_height = self.polar_height
-        polar_width = self.polar_width
-
-        pupil_xyr = torch.tensor(pupil_xyr).unsqueeze(0).float().to(self.device)
-        iris_xyr = torch.tensor(iris_xyr).unsqueeze(0).float().to(self.device)
-        
-        theta = (2*pi*torch.linspace(0,polar_width-1,polar_width)/polar_width).to(self.device)
-        pxCirclePoints = torch.round(pupil_xyr[:, 0].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device) #b x 512
-        pyCirclePoints = torch.round(pupil_xyr[:, 1].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device)  #b x 512
-        
-        ixCirclePoints = torch.round(iris_xyr[:, 0].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device)  #b x 512
-        iyCirclePoints = torch.round(iris_xyr[:, 1].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device) #b x 512
-
-        radius = (torch.linspace(1,polar_height,polar_height)/polar_height).reshape(-1, 1).to(self.device)  #64 x 1
-        
-        pxCoords = torch.matmul((1-radius), pxCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
-        pyCoords = torch.matmul((1-radius), pyCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
-        
-        ixCoords = torch.matmul(radius, ixCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
-        iyCoords = torch.matmul(radius, iyCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
-
-        x = (pxCoords + ixCoords).float()
-        x_norm = ((x-1)/(width-1))*2 - 1 #b x 64 x 512
-
-        y = (pyCoords + iyCoords).float()
-        y_norm = ((y-1)/(height-1))*2 - 1  #b x 64 x 512
-
-        grid_sample_mat = torch.cat([x_norm.unsqueeze(-1), y_norm.unsqueeze(-1)], dim=-1).to(self.device)
-
-        image_polar = self.grid_sample(image, grid_sample_mat, interp_mode=interpolation)
-        image_polar = torch.clamp(torch.round(image_polar), min=0, max=255)
-        mask_polar = self.grid_sample(mask, grid_sample_mat, interp_mode='nearest') #no use using bilinear for interpolation in mask
-        mask_polar = (mask_polar>0.5).long() * 255
-
-        return (image_polar[0][0].cpu().numpy()).astype(np.uint8), mask_polar[0][0].cpu().numpy().astype(np.uint8)
-    
-    # Rubbersheet model-based Cartesian-to-polar transformation uses nearest neighbor interpolation
+    # (Fixed) Old Rubbersheet model-based Cartesian-to-polar transformation uses nearest neighbor interpolation
     def cartToPol(self, image, mask, pupil_xyr, iris_xyr):
         
         if pupil_xyr is None:
@@ -378,7 +354,7 @@ class irisRecognition(object):
 
         return image_polar, mask_polar
     
-    '''
+    # Previous implementation of iris code extraction, updated code only wraps horizontally
     # Iris code
     def extractCode(self, polar):
         
@@ -407,7 +383,7 @@ class irisRecognition(object):
             codeBinary[:,:,i-1] = ci>0
 
         return codeBinary
-
+    
     # Match iris codes
     def matchCodes(self, code1, code2, mask1, mask2):
         
@@ -415,7 +391,7 @@ class irisRecognition(object):
             return -1., 0.
         if code2 is None or mask2 is None:
             return -2., 0.
-
+        
         margin = int(np.ceil(self.filter_size/2))
         code1 = np.array(code1)
         code2 = np.array(code2)
@@ -439,11 +415,39 @@ class irisRecognition(object):
         scoreC_shift = self.max_shift-np.argmin(scoreMean)
 
         return scoreC, scoreC_shift
+    '''
+
+    def extractCode(self, polar):
+        with torch.no_grad():
+            if polar is None:
+                return None
+            r = int(np.floor(self.filter_size / 2))
+            polar_t = torch.tensor(polar).float().unsqueeze(0).unsqueeze(0)
+            polar_t = (polar_t - polar_t.min()) / (polar_t.max() - polar_t.min())
+            padded_polar = nn.functional.pad(polar_t, (r, r, 0, 0), mode='circular')
+            codeContinuous = nn.functional.conv2d(padded_polar, self.torch_filter)
+            codeBinary = torch.where(codeContinuous.squeeze(0) > 0, True, False).cpu().numpy()
+            return codeBinary # The size of the code should be: 7 x 48 x 512 
+    
+    def matchCodes(self, code1, code2, mask1, mask2):
+        r = int(np.floor(self.filter_size / 2))
+        # Cutting off mask to (64-filter_size+1) x 512 and binarizing it.
+        mask1_binary = np.where(mask1[r:-r, :] > 127, True, False) 
+        mask2_binary = np.where(mask2[r:-r, :] > 127, True, False)
+        scoreC = np.zeros((self.num_filters, 2*self.max_shift+1))
+        for shift in range(-self.max_shift, self.max_shift+1):
+            andMasks = np.logical_and(mask1_binary, np.roll(mask2_binary, shift, axis=1))
+            xorCodes = np.logical_xor(code1, np.roll(code2, shift, axis=2))
+            xorCodesMasked = np.logical_and(xorCodes, np.tile(np.expand_dims(andMasks,axis=0), (self.num_filters, 1, 1)))
+            scoreC[:,shift] = np.sum(xorCodesMasked, axis=(1,2)) / np.sum(andMasks)
+        
+        scoreMean = np.mean(scoreC, axis=0)
+        scoreC = np.min(scoreMean)
+        scoreC_shift = self.max_shift - np.argmin(scoreMean)
+        return scoreC, scoreC_shift
 
     def polar(self,x,y):
         return math.hypot(x,y),math.degrees(math.atan2(y,x))
-
-
 
     def visualizeMatchingResult(self, code1, code2, mask1, mask2, shift, im, pupil_xyr, iris_xyr):
         

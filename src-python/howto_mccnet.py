@@ -31,11 +31,12 @@ def main(cfg):
         im_mask = Image.fromarray(mask)
 
         # cartesian to polar transformation:
-        im_polar, mask_polar = irisRec.cartToPol(im, mask, pupil_xyr, iris_xyr)
+        im_polar, mask_polar = irisRec.cartToPol_torch(im, mask, pupil_xyr, iris_xyr)
         polar_mask_list.append(mask_polar)
 
         # human-driven BSIF encoding:
         code = irisRec.extractCode(im_polar)
+        #print(code.shape)
         code_list.append(code)
 
         # DEBUG: save selected processing results
