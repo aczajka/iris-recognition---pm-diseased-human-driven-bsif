@@ -33,7 +33,7 @@ def main(cfg):
 
         # segmentation mask and circular approximation:
         mask, pupil_xyr, iris_xyr = irisRec.segment_and_circApprox(im)
-        im_mask = Image.fromarray(mask)
+        im_mask = Image.fromarray(np.where(mask > 0.5, 255, 0).astype(np.uint8), 'L')
 
         # cartesian to polar transformation:
         im_polar, mask_polar = irisRec.cartToPol_torch(im, mask, pupil_xyr, iris_xyr)

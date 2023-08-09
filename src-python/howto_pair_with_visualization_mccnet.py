@@ -11,15 +11,15 @@ def main(cfg):
 
     irisRec = irisRecognition(cfg, use_hough=False)
 
-    # Get the list of images to process
+    # Get the image pair
     filename_list = []
+    filename_list.append("0002_L_2_1.bmp")
+    filename_list.append("0002_L_3_1.bmp")
     image_list = []
-    extensions = ["bmp", "png", "gif", "jpg", "jpeg", "tiff", "tif"]
-    for ext in extensions:
-        for filename in glob.glob("../data/*." + ext):
-            im = Image.open(filename)
-            image_list.append(im)
-            filename_list.append(os.path.basename(filename))
+
+    for fn in filename_list:
+        im = Image.open("../data/" + fn)
+        image_list.append(im)
     
     # Segmentation, normalization and encoding
     polar_mask_list = []
@@ -29,13 +29,10 @@ def main(cfg):
     for im,fn in zip(image_list,filename_list):
         
         print(fn)
-        
-        # convert to ISO-compliant aspect ratio (4:3)
-        im = irisRec.fix_image(im)
 
         # segmentation mask and circular approximation:
         mask, pupil_xyr, iris_xyr = irisRec.segment_and_circApprox(im)
-        im_mask = Image.fromarray(mask)
+        im_mask = Image.fromarray(np.where(mask > 0.5, 255, 0).astype(np.uint8), 'L')
         
         pupil_xyr_list.append(pupil_xyr)
         iris_xyr_list.append(iris_xyr)
@@ -55,20 +52,18 @@ def main(cfg):
         cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_im_polar_CCNet.png",im_polar)
         cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_mask_polar_CCNet.png",mask_polar)
         np.savez_compressed("./templates/" + os.path.splitext(fn)[0] + "_tmpl.npz",code)
-    '''    
+        
     # Matching
-    for code1,mask1,fn1,i in zip(code_list,polar_mask_list,filename_list,range(len(code_list))):
-        for code2,mask2,fn2,j in zip(code_list,polar_mask_list,filename_list,range(len(code_list))):
-            if i < j:
-                score, shift = irisRec.matchCodes(code1, code2, mask1, mask2)
-                print("{} <-> {} : {:.3f} (mutual rot: {:.2f} deg)".format(fn1,fn2,score,360*shift/irisRec.polar_width))
-                # Visualization: heat map (most similar regions in red, least similar regions in blue)
-                imVis = irisRec.visualizeMatchingResult(code_list[i], code_list[j], polar_mask_list[i], polar_mask_list[j], shift, image_list[i], pupil_xyr_list[i], iris_xyr_list[i])
-                cv2.imwrite("../dataProcessed/" + filename_list[i] + "_HeatMapVis.png",imVis)
+    score, shift = irisRec.matchCodes(code_list[0], code_list[1], polar_mask_list[0], polar_mask_list[1])
+    print(score)
 
-                imVis = irisRec.visualizeMatchingResult(code_list[i], code_list[j], polar_mask_list[i], polar_mask_list[j], shift, image_list[j], pupil_xyr_list[j], iris_xyr_list[j])
-                cv2.imwrite("../dataProcessed/" + filename_list[1] + "_HeatMapVis.png",imVis)
-    '''
+    # Visualization: heat map (most similar regions in red, least similar regions in blue)
+    imVis = irisRec.visualizeMatchingResult(code_list[0], code_list[1], polar_mask_list[0], polar_mask_list[1], shift, image_list[0], pupil_xyr_list[0], iris_xyr_list[0])
+    cv2.imwrite("../dataProcessed/" + filename_list[0] + "_HeatMapVis.png",imVis)
+
+    imVis = irisRec.visualizeMatchingResult(code_list[0], code_list[1], polar_mask_list[0], polar_mask_list[1], shift, image_list[1], pupil_xyr_list[1], iris_xyr_list[1])
+    cv2.imwrite("../dataProcessed/" + filename_list[1] + "_HeatMapVis.png",imVis)
+
     return None
 
 if __name__ == "__main__":
