@@ -14,10 +14,12 @@ def main(cfg):
     # Get the list of images to process
     filename_list = []
     image_list = []
-    for filename in glob.glob("../data/*.bmp"):
-        im = Image.open(filename)
-        image_list.append(im)
-        filename_list.append(os.path.basename(filename))
+    extensions = ["bmp", "png", "gif", "jpg", "jpeg", "tiff", "tif"]
+    for ext in extensions:
+        for filename in glob.glob("../data/*." + ext):
+            im = Image.open(filename)
+            image_list.append(im)
+            filename_list.append(os.path.basename(filename))
 
     # Segmentation, normalization and encoding
     polar_mask_list = []
@@ -25,6 +27,9 @@ def main(cfg):
     for im,fn in zip(image_list,filename_list):
         
         print(fn)
+
+        # convert to ISO-compliant aspect ratio (4:3)
+        im = irisRec.fix_image(im)
 
         # segmentation mask and circular approximation:
         mask, pupil_xyr, iris_xyr = irisRec.segment_and_circApprox(im)

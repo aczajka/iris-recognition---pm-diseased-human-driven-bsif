@@ -141,117 +141,21 @@ class UNet(nn.Module):
 
         return self.final(enc1)
 
-class ResBlock(nn.Module):
-    def __init__(self, in_channels, middle_channels, out_channels):
-        super().__init__()
-        self.conv_res = nn.Conv2d(in_channels, out_channels, 1, stride =  1, bias = False)
-        
-        self.net = nn.Sequential(
-            nn.Conv2d(in_channels, middle_channels, 3, padding=1, bias=False),
-            nn.BatchNorm2d(middle_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(middle_channels, out_channels, 3, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
-        )
-
-    def forward(self, x):
-        res = self.conv_res(x)
-        x = self.net(x)
-        x = (x + res) * (1 / math.sqrt(2))
-        return x
-
-class NestedResUNetParam(nn.Module):
-    def __init__(self, num_channels, num_params=6, width=32, resolution=(240, 320)):
-        super().__init__()
-
-        self.resolution = resolution
-        nb_filter = [width, width*2, width*4, width*8, width*16]
-
-        self.pool = nn.MaxPool2d(2, stride=2)
-        self.up = nn.Upsample(scale_factor=2, mode='nearest')
-
-        self.conv0_0 = ResBlock(num_channels, nb_filter[0], nb_filter[0])
-        self.conv1_0 = ResBlock(nb_filter[0], nb_filter[1], nb_filter[1])
-        self.conv2_0 = ResBlock(nb_filter[1], nb_filter[2], nb_filter[2])
-        self.conv3_0 = ResBlock(nb_filter[2], nb_filter[3], nb_filter[3])
-        self.conv4_0 = ResBlock(nb_filter[3], nb_filter[4], nb_filter[4])
-
-        self.conv0_1 = ResBlock(nb_filter[0]+nb_filter[1], nb_filter[0], nb_filter[0])
-        self.conv1_1 = ResBlock(nb_filter[1]+nb_filter[2], nb_filter[1], nb_filter[1])
-        self.conv2_1 = ResBlock(nb_filter[2]+nb_filter[3], nb_filter[2], nb_filter[2])
-        self.conv3_1 = ResBlock(nb_filter[3]+nb_filter[4], nb_filter[3], nb_filter[3])
-
-        self.conv0_2 = ResBlock(nb_filter[0]*2+nb_filter[1], nb_filter[0], nb_filter[0])
-        self.conv1_2 = ResBlock(nb_filter[1]*2+nb_filter[2], nb_filter[1], nb_filter[1])
-        self.conv2_2 = ResBlock(nb_filter[2]*2+nb_filter[3], nb_filter[2], nb_filter[2])
-
-        self.conv0_3 = ResBlock(nb_filter[0]*3+nb_filter[1], nb_filter[0], nb_filter[0])
-        self.conv1_3 = ResBlock(nb_filter[1]*3+nb_filter[2], nb_filter[1], nb_filter[1])
-
-        self.conv0_4 = ResBlock(nb_filter[0]*4+nb_filter[1], nb_filter[0], nb_filter[0])
-        
-        self.xyr_input = ResBlock(num_channels, nb_filter[0], nb_filter[0])      
-        self.xyr_conv1 = ResBlock(nb_filter[0]*5, nb_filter[0]*4, nb_filter[0]*4)
-        self.xyr_conv2 = ResBlock(nb_filter[0]*4, nb_filter[0]*3, nb_filter[0]*3)
-        self.xyr_conv3 = ResBlock(nb_filter[0]*3, nb_filter[0]*2, nb_filter[0]*2)
-        self.xyr_conv4 = ResBlock(nb_filter[0]*2, nb_filter[0], nb_filter[0])
-        self.xyr_linear = nn.Sequential(
-                              nn.Flatten(),
-                              nn.Linear(nb_filter[0]*int(resolution[0]/16)*int(resolution[1]/16), int(resolution[0]/16)*int(resolution[1]/16)),
-                              nn.ReLU(),
-                              nn.Linear(int(resolution[0]/16)*int(resolution[1]/16), num_params)
-                          )
-
-
-    def forward(self, input):
-        x0_0 = self.conv0_0(input)
-        x1_0 = self.conv1_0(self.pool(x0_0))
-        x0_1 = self.conv0_1(torch.cat([x0_0, self.up(x1_0)], 1))
-
-        x2_0 = self.conv2_0(self.pool(x1_0))
-        x1_1 = self.conv1_1(torch.cat([x1_0, self.up(x2_0)], 1))
-        x0_2 = self.conv0_2(torch.cat([x0_0, x0_1, self.up(x1_1)], 1))
-
-        x3_0 = self.conv3_0(self.pool(x2_0))
-        x2_1 = self.conv2_1(torch.cat([x2_0, self.up(x3_0)], 1))
-        x1_2 = self.conv1_2(torch.cat([x1_0, x1_1, self.up(x2_1)], 1))
-        x0_3 = self.conv0_3(torch.cat([x0_0, x0_1, x0_2, self.up(x1_2)], 1))
-
-        x4_0 = self.conv4_0(self.pool(x3_0))
-        x3_1 = self.conv3_1(torch.cat([x3_0, self.up(x4_0)], 1))
-        x2_2 = self.conv2_2(torch.cat([x2_0, x2_1, self.up(x3_1)], 1))
-        x1_3 = self.conv1_3(torch.cat([x1_0, x1_1, x1_2, self.up(x2_2)], 1))
-        x0_4 = self.conv0_4(torch.cat([x0_0, x0_1, x0_2, x0_3, self.up(x1_3)], 1))
-        
-        xyr0 = self.xyr_input(input)
-        xyr1 = self.xyr_conv1(torch.cat([xyr0, x0_1, x0_2, x0_3, x0_4], 1)) #240x320
-        xyr2 = self.xyr_conv2(self.pool(xyr1)) #120x160
-        xyr3 = self.xyr_conv3(self.pool(xyr2)) #60x80
-        xyr4 = self.xyr_conv4(self.pool(xyr3)) #30x40
-        xyr5 = self.xyr_linear(self.pool(xyr4)) #15x20
-          
-        return xyr5
-
 class SharedAtrousConv2d(nn.Module):
     def __init__(self, in_channels, out_channels, bias=True):
         super().__init__()
-        self.weights = nn.Parameter(torch.rand(out_channels, in_channels, 3, 3))
-        nn.init.kaiming_normal_(self.weights, mode='fan_out', nonlinearity='relu')
+        self.weights = nn.Parameter(torch.rand(int(out_channels/2), in_channels, 3, 3))
+        nn.init.kaiming_uniform_(self.weights, mode='fan_out', nonlinearity='relu')
         if bias:
-            self.bias1 = nn.Parameter(torch.rand(out_channels))
-            nn.init.zeros_(self.bias1)
-            self.bias2 = nn.Parameter(torch.rand(out_channels))
-            nn.init.zeros_(self.bias2)
+            self.bias1 = nn.Parameter(torch.zeros(int(out_channels/2)))
+            self.bias2 = nn.Parameter(torch.zeros(int(out_channels/2)))
         else:
             self.bias1 = None
             self.bias2 = None
-        self.join_net = nn.Conv2d(out_channels * 2, out_channels, kernel_size=1, stride=1, padding='same', bias=bias)
-        nn.init.kaiming_normal_(self.join_net.weight, mode='fan_in', nonlinearity='relu')
     def forward(self, x):
         x1 = nn.functional.conv2d(x, self.weights, stride=1, padding='same', bias=self.bias1)
         x2 = nn.functional.conv2d(x, self.weights, stride=1, padding='same', dilation=2, bias=self.bias2)
-        x3 = self.join_net(torch.cat([x1, x2], 1))
+        x3 = torch.cat([x1, x2], 1)
         return x3
 
 class SharedAtrousResBlock(nn.Module):
@@ -294,8 +198,8 @@ class NestedSharedAtrousResUNet(nn.Module):
         self.resolution = resolution
         nb_filter = [width, width*2, width*4, width*8, width*16]
 
-        self.pool = Resize(scale_factor=0.5, mode='bicubic')
-        self.up = Resize(scale_factor=2, mode='bicubic')
+        self.pool = Resize(scale_factor=0.5, mode='bilinear')
+        self.up = Resize(scale_factor=2, mode='bilinear')
 
         self.conv0_0 = SharedAtrousResBlock(num_channels, nb_filter[0], nb_filter[0])
         self.conv1_0 = SharedAtrousResBlock(nb_filter[0], nb_filter[1], nb_filter[1])
@@ -321,20 +225,20 @@ class NestedSharedAtrousResUNet(nn.Module):
 
     def forward(self, input):
         
-        x0_0 = self.conv0_0(input)
-        x1_0 = self.conv1_0(self.pool(x0_0))
+        x0_0 = self.conv0_0(input) #320x240
+        x1_0 = self.conv1_0(self.pool(x0_0)) #160x120
         x0_1 = self.conv0_1(torch.cat([x0_0, self.up(x1_0)], 1))
 
-        x2_0 = self.conv2_0(self.pool(x1_0))
+        x2_0 = self.conv2_0(self.pool(x1_0)) #80x60
         x1_1 = self.conv1_1(torch.cat([x1_0, self.up(x2_0)], 1))
         x0_2 = self.conv0_2(torch.cat([x0_0, x0_1, self.up(x1_1)], 1))
 
-        x3_0 = self.conv3_0(self.pool(x2_0))
+        x3_0 = self.conv3_0(self.pool(x2_0)) #40x30
         x2_1 = self.conv2_1(torch.cat([x2_0, self.up(x3_0)], 1))
         x1_2 = self.conv1_2(torch.cat([x1_0, x1_1, self.up(x2_1)], 1))
         x0_3 = self.conv0_3(torch.cat([x0_0, x0_1, x0_2, self.up(x1_2)], 1))
 
-        x4_0 = self.conv4_0(self.pool(x3_0))
+        x4_0 = self.conv4_0(self.pool(x3_0)) #20x15
         x3_1 = self.conv3_1(torch.cat([x3_0, self.up(x4_0)], 1))
         x2_2 = self.conv2_2(torch.cat([x2_0, x2_1, self.up(x3_1)], 1))
         x1_3 = self.conv1_3(torch.cat([x1_0, x1_1, x1_2, self.up(x2_2)], 1))

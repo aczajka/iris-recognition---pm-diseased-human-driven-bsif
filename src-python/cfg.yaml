@@ -2,8 +2,8 @@
 # Segmentation settings
 #######################################################
 ccnet_model_path: "../models/CCNet_epoch_260_NIRRGBmixed_adam.pth"
-mask_model_path: "../models/nestedsharedatrousresunet-017-0.02902-maskIoU-0.938773.pth"
-circle_model_path: "../models/nestedresunetparam-604-0.049-pupilIoU-0.907-irisIoU-0.947.pth"
+mask_model_path: "../models/nestedsharedatrousresunet-217-0.027828-maskIoU-0.938739.pth"
+circle_model_path: "../models/resnet50-670-0.015178-maskIoU-0.935602.pth"
 cuda: ""
 gpu: ""
 iris_hough_param1: 30

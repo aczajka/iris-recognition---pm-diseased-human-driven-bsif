@@ -10,7 +10,8 @@ from PIL import Image
 from skimage import img_as_bool
 import math
 from math import pi
-from modules.network import UNet, NestedSharedAtrousResUNet, NestedResUNetParam
+from torchvision import models
+from modules.network import UNet, NestedSharedAtrousResUNet
 
 class irisRecognition(object):
     def __init__(self, cfg, use_hough=True):
@@ -52,7 +53,12 @@ class irisRecognition(object):
         # Loading the CCNet
         if not self.use_hough:
             if self.mask_model_path and self.circle_model_path:
-                self.circle_model = NestedResUNetParam(1, 6)
+                self.circle_model = models.resnet50()
+                self.circle_model.fc = nn.Sequential(
+                        nn.Linear(2048, 64),
+                        nn.ReLU(inplace=True),
+                        nn.Linear(64, 6)
+                )
                 try:
                     self.circle_model.load_state_dict(torch.load(self.circle_model_path, map_location=self.device))
                 except AssertionError:
@@ -61,7 +67,7 @@ class irisRecognition(object):
                             map_location = lambda storage, loc: storage))
                 self.circle_model = self.circle_model.to(self.device)
                 self.circle_model.eval()
-                self.mask_model = NestedSharedAtrousResUNet(1, 1)
+                self.mask_model = NestedSharedAtrousResUNet(1, 1, width=64, resolution=(240,320))
                 try:
                     self.mask_model.load_state_dict(torch.load(self.mask_model_path, map_location=self.device))
                 except AssertionError:
@@ -77,8 +83,8 @@ class irisRecognition(object):
                 ])
                 self.input_transform_circ = Compose([
                     ToTensor(),
-                    Normalize(mean=(0.5791223733793273,), std=(0.21176097694558188,))
-                    #Normalize(mean=(0.5,), std=(0.5,))
+                    #Normalize(mean=(0.5791223733793273,), std=(0.21176097694558188,))
+                    Normalize(mean=(0.5,), std=(0.5,))
                 ])
         else:
             self.CCNET_NUM_CHANNELS = 1
@@ -90,7 +96,7 @@ class irisRecognition(object):
                         self.model.load_state_dict(torch.load(self.ccnet_model_path, map_location=torch.device('cuda')))
                     else:
                         self.model.load_state_dict(torch.load(self.ccnet_model_path, map_location=torch.device('cpu')))
-                        # print("model state loaded")
+                        print("model state loaded")
                 except AssertionError:
                     print("assertion error")
                     self.model.load_state_dict(torch.load(self.ccnet_model_path,
@@ -108,7 +114,26 @@ class irisRecognition(object):
         self.sk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(15,15))
         self.ISO_RES = (640,480)
         self.clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(16,16))
-        
+
+    # converts non-ISO images into ISO dimensions
+    def fix_image(self, image):
+        w, h = image.size
+        aspect_ratio = float(w)/float(h)
+        if aspect_ratio >= 1.333 and aspect_ratio <= 1.334:
+            result_im = image.resize((640, 480))
+        elif aspect_ratio < 1.333:
+            w_new = h * (4.0/3.0)
+            w_pad = (w_new - w) / 2
+            result_im = Image.new(image.mode, (int(w_new), h), 127)
+            result_im.paste(image, (int(w_pad), 0))
+            result_im = result_im.resize((640, 480))
+        else:
+            h_new = w * (3.0/4.0)
+            h_pad = (h_new - h) / 2
+            result_im = Image.new(image.mode, (w, int(h_new)), 127)
+            result_im.paste(image, (0, int(h_pad)))
+            result_im = result_im.resize((640, 480))
+        return result_im
     
     ### Use this function for a faster estimation of mask and circle parameters. When use_hough is False, this function uses both the circle approximation and the mask from MCCNet
     def segment_and_circApprox(self, image):
@@ -214,20 +239,20 @@ class irisRecognition(object):
             return np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
         elif (not self.use_hough) and (image is not None):
             w,h = image.size
+
             image = cv2.resize(np.array(image), self.NET_INPUT_SIZE, cv2.INTER_CUBIC)
-            w_mult = w/self.NET_INPUT_SIZE[0]
-            h_mult = h/self.NET_INPUT_SIZE[1]
             with torch.no_grad():
-                inp_xyr_t = self.circle_model(Variable(self.input_transform_circ(image).unsqueeze(0).to(self.device)))
+                inp_xyr_t = self.circle_model(Variable(self.input_transform_circ(image).unsqueeze(0).repeat(1,3,1,1).to(self.device)))
 
             #Circle params
+            diag = math.sqrt(w**2 + h**2)
             inp_xyr = inp_xyr_t.tolist()[0]
-            pupil_x = int(inp_xyr[0] * w_mult)
-            pupil_y = int(inp_xyr[1] * h_mult)
-            pupil_r = int(inp_xyr[2] * max(w_mult, h_mult))
-            iris_x = int(inp_xyr[3] * w_mult)
-            iris_y = int(inp_xyr[4] * h_mult)
-            iris_r = int(inp_xyr[5] * max(w_mult, h_mult))
+            pupil_x = int(inp_xyr[0] * w)
+            pupil_y = int(inp_xyr[1] * h)
+            pupil_r = int(inp_xyr[2] * 0.5 * 0.8 * diag)
+            iris_x = int(inp_xyr[3] * w)
+            iris_y = int(inp_xyr[4] * h)
+            iris_r = int(inp_xyr[5] * 0.5 * diag)
 
             return np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
     
@@ -434,6 +459,7 @@ class irisRecognition(object):
         # Cutting off mask to (64-filter_size+1) x 512 and binarizing it.
         mask1_binary = np.where(mask1[r:-r, :] > 127, True, False) 
         mask2_binary = np.where(mask2[r:-r, :] > 127, True, False)
+        #print(mask1_binary.shape, mask2_binary.shape)
         scoreC = np.zeros((self.num_filters, 2*self.max_shift+1))
         for shift in range(-self.max_shift, self.max_shift+1):
             andMasks = np.logical_and(mask1_binary, np.roll(mask2_binary, shift, axis=1))
@@ -453,13 +479,17 @@ class irisRecognition(object):
         
         resMask = np.zeros((self.ISO_RES[1],self.ISO_RES[0]))
 
+        r = int(np.floor(self.filter_size / 2))
         # calculate heat map
-        xorCodes = np.logical_xor(self.code1, np.roll(self.code2, self.max_shift-shift, axis=1))
-        andMasks = np.logical_and(self.mask1, np.roll(self.mask2, self.max_shift-shift, axis=1))
+        xorCodes = np.logical_xor(code1, np.roll(code2, self.max_shift-shift, axis=1))
+        mask1_binary = np.where(mask1[r:-r, :] > 127, True, False) 
+        mask2_binary = np.where(mask2[r:-r, :] > 127, True, False)
+        andMasks = np.logical_and(mask1_binary, np.roll(mask2_binary, shift, axis=1))
 
         heatMap = 1-xorCodes.astype(int)
-        heatMap = np.pad(np.mean(heatMap,axis=2), pad_width=((8,8),(0,0)), mode='constant', constant_values=0)
+        heatMap = np.pad(np.mean(heatMap,axis=0), pad_width=((8,8),(0,0)), mode='constant', constant_values=0)
         andMasks = np.pad(andMasks, pad_width=((8,8),(0,0)), mode='constant', constant_values=0)
+
         heatMap = heatMap * andMasks
 
         if 'single' in self.vis_mode:
