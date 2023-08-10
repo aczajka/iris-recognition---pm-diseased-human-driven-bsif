@@ -45,12 +45,12 @@ def main(cfg):
         code_list.append(code)
 
         # DEBUG: save selected processing results
-        im_mask.save("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_CCNet_mask.png")
+        im_mask.save("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_MCCNet_mask.png")
         imVis = irisRec.segmentVis(im,mask,pupil_xyr,iris_xyr)
         path = "../dataProcessed/" + os.path.splitext(fn)[0]
-        cv2.imwrite(path + "_seg_CCNet_vis.png",imVis)
-        cv2.imwrite(path + "_im_polar_CCNet.png",im_polar)
-        cv2.imwrite(path + "_mask_polar_CCNet.png",mask_polar)
+        cv2.imwrite(path + "_seg_MCCNet_vis.png",imVis)
+        cv2.imwrite(path + "_im_polar_MCCNet.png",im_polar)
+        cv2.imwrite(path + "_mask_polar_MCCNet.png",mask_polar)
         np.savez_compressed("./templates/" + os.path.splitext(fn)[0] + "_tmpl.npz",code)
         for i in range(irisRec.num_filters):
             cv2.imwrite(("%s_code_filter%d.png" % (path,i)),255*code[:,:,i])

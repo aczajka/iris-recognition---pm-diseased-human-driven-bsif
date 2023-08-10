@@ -7,7 +7,6 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torchvision.transforms import Compose, ToTensor, Normalize
 from PIL import Image
-from skimage import img_as_bool
 import math
 from math import pi
 from torchvision import models
@@ -32,7 +31,10 @@ class irisRecognition(object):
         self.mask_model_path = cfg["mask_model_path"]
         self.circle_model_path = cfg["circle_model_path"]
         self.ccnet_model_path = cfg["ccnet_model_path"]
-        filter_mat = scipy.io.loadmat(cfg["recog_bsif_dir"]+'ICAtextureFilters_{0}x{1}_{2}bit.mat'.format(self.filter_size, self.filter_size, self.num_filters))['ICAtextureFilters']
+        #filter_mat = scipy.io.loadmat(cfg["recog_bsif_dir"]+'ICAtextureFilters_{0}x{1}_{2}bit.mat'.format(self.filter_size, self.filter_size, self.num_filters))['ICAtextureFilters']
+        mat_file_path = cfg["recog_bsif_dir"]+'ICAtextureFilters_{0}x{1}_{2}bit.pt'.format(self.filter_size, self.filter_size, self.num_filters)
+        with torch.no_grad():
+            filter_mat = torch.jit.load(mat_file_path, torch.device('cpu')).ICAtextureFilters.detach().numpy()
         self.filter_size = filter_mat.shape[0]
         self.num_filters = filter_mat.shape[2]
         with torch.no_grad():
@@ -149,8 +151,9 @@ class irisRecognition(object):
                 outputs = self.model(Variable(self.input_transform(image).unsqueeze(0).to(self.device)))
             logprob = self.softmax(outputs).data.cpu().numpy()
             pred = np.argmax(logprob, axis=1)*255
-            pred = Image.fromarray(pred[0].astype(np.uint8))
-            pred = np.array(pred)
+            pred = Image.fromarray(pred[0].astype(np.uint8), 'L')
+            # Resize the mask to the original image size
+            pred = cv2.resize(np.uint8(pred), (w,h), cv2.INTER_NEAREST_EXACT)
 
             # Optional: uncomment the following lines to take only the biggest blob returned by CCNet
             '''
@@ -168,10 +171,6 @@ class irisRecognition(object):
                 pred[output == max_label] = 255
                 pred = np.asarray(pred, dtype=np.uint8)
             '''
-
-            # Resize the mask to the original image size
-            pred = img_as_bool(cv2.resize(np.array(pred), (w,h), cv2.INTER_NEAREST_EXACT))
-
             return pred
         else:
             w,h = image.size
@@ -180,7 +179,7 @@ class irisRecognition(object):
                 mask_logit_t = self.mask_model(Variable(self.input_transform_mask(image).unsqueeze(0).to(self.device)))[0]
                 mask_t = torch.where(torch.sigmoid(mask_logit_t) > 0.5, 255, 0)
             mask = mask_t.cpu().numpy()[0]
-            mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST_EXACT)
+            mask = cv2.resize(np.uint8(mask), (w, h), interpolation=cv2.INTER_NEAREST_EXACT)
             #print('Mask Shape: ', mask.shape)
 
             return mask
@@ -189,7 +188,7 @@ class irisRecognition(object):
     def segmentVis(self,im,mask,pupil_xyr,iris_xyr):
 
         imVis = np.stack((np.array(im),)*3, axis=-1)
-        imVis[:,:,1] = np.clip(imVis[:,:,1] + 96*mask,0,255)
+        imVis[:,:,1] = np.clip(imVis[:,:,1] + (96/255)*mask,0,255)
         imVis = cv2.circle(imVis, (pupil_xyr[0],pupil_xyr[1]), pupil_xyr[2], (0, 0, 255), 2)
         imVis = cv2.circle(imVis, (iris_xyr[0],iris_xyr[1]), iris_xyr[2], (255, 0, 0), 2)
 
@@ -203,8 +202,8 @@ class irisRecognition(object):
             print('Please provide image if you want to use the mccnet model') 
         if self.use_hough and (mask is not None):
             # Iris boundary approximation
-            mask_for_iris = 255*(1 - np.uint8(mask))
-            iris_indices = np.where(mask_for_iris == 0)
+            mask_for_iris = cv2.bitwise_not(mask)
+            iris_indices = np.nonzero(mask)
             if len(iris_indices[0]) == 0:
                 return None, None
             y_span = max(iris_indices[0]) - min(iris_indices[0])
@@ -341,7 +340,7 @@ class irisRecognition(object):
                 y = int(np.around((1-radius) * pyCirclePoints[j-1] + radius * iyCirclePoints[j-1]))
                 if (x > 0 and x <= width and y > 0 and y <= height): 
                     image_polar[i-1][j-1] = image[y-1][x-1]
-                    mask_polar[i-1][j-1] = 255*mask[y-1][x-1]
+                    mask_polar[i-1][j-1] = mask[y-1][x-1]
 
         return image_polar, mask_polar
     

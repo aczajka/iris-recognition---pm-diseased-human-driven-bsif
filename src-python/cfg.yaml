@@ -20,10 +20,10 @@ max_pupil_iris_shift: 25
 #######################################################
 polar_height: 64
 polar_width: 512
-recog_filter_size: 15
-recog_num_filters: 7
+recog_filter_size: 17
+recog_num_filters: 5
 recog_max_shift: 16
-recog_bsif_dir: "../filters/finetuned_bsif_eyetracker_data/"
+recog_bsif_dir: "../filters_pt/finetuned_bsif_eyetracker_data/"
 
 #######################################################
 # Matching visualization

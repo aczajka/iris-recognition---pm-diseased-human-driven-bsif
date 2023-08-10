@@ -46,11 +46,11 @@ def main(cfg):
         code_list.append(code)
 
         # DEBUG: save selected processing results 
-        im_mask.save("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_CCNet_mask.png")
+        im_mask.save("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_MCCNet_mask.png")
         imVis = irisRec.segmentVis(im,mask,pupil_xyr,iris_xyr)
-        cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_CCNet_vis.png",imVis)
-        cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_im_polar_CCNet.png",im_polar)
-        cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_mask_polar_CCNet.png",mask_polar)
+        cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_seg_MCCNet_vis.png",imVis)
+        cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_im_polar_MCCNet.png",im_polar)
+        cv2.imwrite("../dataProcessed/" + os.path.splitext(fn)[0] + "_mask_polar_MCCNet.png",mask_polar)
         np.savez_compressed("./templates/" + os.path.splitext(fn)[0] + "_tmpl.npz",code)
         
     # Matching

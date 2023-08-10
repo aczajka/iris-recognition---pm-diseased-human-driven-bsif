@@ -28,15 +28,17 @@ close all
 % where various things live:
 DIR_IMAGES_TO_PROCESS = '../data/';
 DIR_IMAGES_PROCESSED = '../dataProcessed/';
-DIR_BSIF_FILTERS = '../filters/';
+DIR_BSIF_FILTERS = '../filters_txt/';
 DIR_TEMPLATES = './templates/';
 
 % Domain-specific BSIF kernel bank (based on WACV 2019 experiments / paper):
 FILTER_BANK_SELECTED = 'finetuned_bsif_eyetracker_data/';
 l = 17;     % size of the filter
 n = 5;      % number of kernels in a set
-filters = [DIR_BSIF_FILTERS FILTER_BANK_SELECTED 'ICAtextureFilters_' num2str(l) 'x' num2str(l) '_' num2str(n) 'bit.mat'];
-load(filters);
+filter_path = [DIR_BSIF_FILTERS FILTER_BANK_SELECTED 'ICAtextureFilters_' num2str(l) 'x' num2str(l) '_' num2str(n) 'bit.txt'];
+ICAtextureFilters = reshape(readmatrix(filter_path), l, l, n);
+%filters = ['../filters/' FILTER_BANK_SELECTED 'ICAtextureFilters_' num2str(l) 'x' num2str(l) '_' num2str(n) 'bit.mat'];
+%load(filters);
 
 % image lists:
 compList = readtable('imageList.txt','Delimiter',' ');
