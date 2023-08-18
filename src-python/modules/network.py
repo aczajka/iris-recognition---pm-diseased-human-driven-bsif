@@ -247,3 +247,29 @@ class NestedSharedAtrousResUNet(nn.Module):
         output = self.final(torch.cat([x0_1, x0_2, x0_3, x0_4], 1))
         
         return output
+
+class fclayer(nn.Module):
+    def __init__(self, in_h = 8, in_w = 10, out_n = 6):
+        super().__init__()
+        self.in_h = in_h
+        self.in_w = in_w
+        self.out_n = out_n
+        self.fc_list = []
+        for i in range(out_n):
+            self.fc_list.append(nn.Linear(in_h*in_w, 1))
+        self.fc_list = nn.ModuleList(self.fc_list)
+    def forward(self, x):
+        x = x.reshape(-1, 6, self.in_h, self.in_w)
+        outs = []
+        for i in range(self.out_n):
+            outs.append(self.fc_list[i](x[:, i, :, :].reshape(-1, self.in_h*self.in_w)))
+        out = torch.cat(outs, 1)
+        return out
+
+class conv(nn.Module):
+    def __init__(self, in_channels=512, out_n = 6):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_n, kernel_size=1, stride=1, padding='same')
+    def forward(self, x):
+        x = self.conv(x)
+        return x

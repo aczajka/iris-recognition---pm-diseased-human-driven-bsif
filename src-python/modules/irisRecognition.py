@@ -5,12 +5,13 @@ import argparse
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+from torchvision import models
 from torchvision.transforms import Compose, ToTensor, Normalize
 from PIL import Image
 import math
 from math import pi
 from torchvision import models
-from modules.network import UNet, NestedSharedAtrousResUNet
+from modules.network import *
 
 class irisRecognition(object):
     def __init__(self, cfg, use_hough=True):
@@ -35,11 +36,14 @@ class irisRecognition(object):
         mat_file_path = cfg["recog_bsif_dir"]+'ICAtextureFilters_{0}x{1}_{2}bit.pt'.format(self.filter_size, self.filter_size, self.num_filters)
         with torch.no_grad():
             filter_mat = torch.jit.load(mat_file_path, torch.device('cpu')).ICAtextureFilters.detach().numpy()
+        #filter_mat_scipy = scipy.io.loadmat('../filters/finetuned_bsif_eyetracker_data/'+'ICAtextureFilters_{0}x{1}_{2}bit.mat'.format(self.filter_size, self.filter_size, self.num_filters))['ICAtextureFilters']
         self.filter_size = filter_mat.shape[0]
         self.num_filters = filter_mat.shape[2]
         with torch.no_grad():
             self.torch_filter = torch.FloatTensor(filter_mat).to(self.device)
             self.torch_filter = torch.moveaxis(self.torch_filter.unsqueeze(0), 3, 0).detach().requires_grad_(False)
+            #self.torch_filter_scipy = torch.FloatTensor(filter_mat_scipy).to(self.device)
+            #self.torch_filter_scipy = torch.moveaxis(self.torch_filter_scipy.unsqueeze(0), 3, 0).detach().requires_grad_(False)
         if self.use_hough == True:
             self.iris_hough_param1 = cfg["iris_hough_param1"]
             self.iris_hough_param2 = cfg["iris_hough_param2"]
@@ -55,12 +59,9 @@ class irisRecognition(object):
         # Loading the CCNet
         if not self.use_hough:
             if self.mask_model_path and self.circle_model_path:
-                self.circle_model = models.resnet50()
-                self.circle_model.fc = nn.Sequential(
-                        nn.Linear(2048, 64),
-                        nn.ReLU(inplace=True),
-                        nn.Linear(64, 6)
-                )
+                self.circle_model = models.resnet34()
+                self.circle_model.avgpool = conv(in_channels=512, out_n=6)
+                self.circle_model.fc = fclayer(out_n=6)
                 try:
                     self.circle_model.load_state_dict(torch.load(self.circle_model_path, map_location=self.device))
                 except AssertionError:
@@ -217,7 +218,7 @@ class irisRecognition(object):
                                         maxRadius=iris_radius_estimate+self.iris_hough_margin)
             if iris_circle is None:
                 return None, None
-            iris_x, iris_y, iris_r = np.rint(np.array(iris_circle[0][0])).astype(int)
+            iris_x, iris_y, iris_r = np.round(np.array(iris_circle[0][0])).astype(int)
             
             
             # Pupil boundary approximation
@@ -225,10 +226,10 @@ class irisRecognition(object):
                                             param1=self.pupil_hough_param1,
                                             param2=self.pupil_hough_param2,
                                             minRadius=self.pupil_hough_minimum,
-                                            maxRadius=np.int(self.pupil_iris_max_ratio*iris_r))
+                                            maxRadius=np.int32(self.pupil_iris_max_ratio*iris_r))
             if pupil_circle is None:
                 return None, None
-            pupil_x, pupil_y, pupil_r = np.rint(np.array(pupil_circle[0][0])).astype(int)
+            pupil_x, pupil_y, pupil_r = np.round(np.array(pupil_circle[0][0])).astype(int)
             
             if np.sqrt((pupil_x-iris_x)**2+(pupil_y-iris_y)**2) > self.max_pupil_iris_shift:
                 pupil_x = iris_x
@@ -451,7 +452,11 @@ class irisRecognition(object):
             padded_polar = nn.functional.pad(polar_t, (r, r, 0, 0), mode='circular')
             codeContinuous = nn.functional.conv2d(padded_polar, self.torch_filter)
             codeBinary = torch.where(codeContinuous.squeeze(0) > 0, True, False).cpu().numpy()
-            return codeBinary # The size of the code should be: 7 x 48 x 512 
+            #codeContinuousScipy = nn.functional.conv2d(padded_polar, self.torch_filter_scipy)
+            #codeBinaryScipy = torch.where(codeContinuousScipy.squeeze(0) > 0, True, False).cpu().numpy()
+            #print(torch.sum(torch.abs(codeContinuous - codeContinuousScipy)))
+            #print(np.count_nonzero(np.bitwise_xor(codeBinary, codeBinaryScipy)))
+            return codeBinary # The size of the code should be: 7 x (64 - filter_size) x 512 
     
     def matchCodes(self, code1, code2, mask1, mask2):
         r = int(np.floor(self.filter_size / 2))
