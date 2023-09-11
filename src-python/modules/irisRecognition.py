@@ -59,9 +59,9 @@ class irisRecognition(object):
         # Loading the CCNet
         if not self.use_hough:
             if self.mask_model_path and self.circle_model_path:
-                self.circle_model = models.resnet34()
-                self.circle_model.avgpool = conv(in_channels=512, out_n=6)
-                self.circle_model.fc = fclayer(out_n=6)
+                self.circle_model = models.convnext_tiny()
+                self.circle_model.avgpool = conv(in_channels=768, out_n=6)
+                self.circle_model.classifier = fclayer(in_h=7, in_w=10, out_n=6)
                 try:
                     self.circle_model.load_state_dict(torch.load(self.circle_model_path, map_location=self.device))
                 except AssertionError:
@@ -452,10 +452,6 @@ class irisRecognition(object):
             padded_polar = nn.functional.pad(polar_t, (r, r, 0, 0), mode='circular')
             codeContinuous = nn.functional.conv2d(padded_polar, self.torch_filter)
             codeBinary = torch.where(codeContinuous.squeeze(0) > 0, True, False).cpu().numpy()
-            #codeContinuousScipy = nn.functional.conv2d(padded_polar, self.torch_filter_scipy)
-            #codeBinaryScipy = torch.where(codeContinuousScipy.squeeze(0) > 0, True, False).cpu().numpy()
-            #print(torch.sum(torch.abs(codeContinuous - codeContinuousScipy)))
-            #print(np.count_nonzero(np.bitwise_xor(codeBinary, codeBinaryScipy)))
             return codeBinary # The size of the code should be: 7 x (64 - filter_size) x 512 
     
     def matchCodes(self, code1, code2, mask1, mask2):
@@ -463,7 +459,6 @@ class irisRecognition(object):
         # Cutting off mask to (64-filter_size+1) x 512 and binarizing it.
         mask1_binary = np.where(mask1[r:-r, :] > 127, True, False) 
         mask2_binary = np.where(mask2[r:-r, :] > 127, True, False)
-        #print(mask1_binary.shape, mask2_binary.shape)
         scoreC = np.zeros((self.num_filters, 2*self.max_shift+1))
         for shift in range(-self.max_shift, self.max_shift+1):
             andMasks = np.logical_and(mask1_binary, np.roll(mask2_binary, shift, axis=1))

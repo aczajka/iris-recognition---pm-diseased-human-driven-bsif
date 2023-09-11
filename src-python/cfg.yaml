@@ -3,7 +3,7 @@
 #######################################################
 ccnet_model_path: "../models/CCNet_epoch_260_NIRRGBmixed_adam.pth"
 mask_model_path: "../models/nestedsharedatrousresunet-217-0.027828-maskIoU-0.938739.pth"
-circle_model_path: "../models/resnet34-1583-0.045002-maskIoU-0.93717.pth"
+circle_model_path: "../models/convnext_tiny-1076-0.030622-maskIoU-0.938355.pth"
 cuda: ""
 gpu: ""
 iris_hough_param1: 30
