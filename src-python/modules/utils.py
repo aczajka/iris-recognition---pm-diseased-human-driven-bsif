@@ -1,7 +1,7 @@
 import yaml
 
 def get_cfg(cfg_path):
-    cfg = yaml.load(open(cfg_path, 'r'), yaml.FullLoader)
+    cfg = yaml.safe_load(open(cfg_path, 'r'))
     return cfg
 
 def load_CCNet():

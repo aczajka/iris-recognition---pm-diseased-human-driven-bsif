@@ -25,6 +25,7 @@ class irisRecognition(object):
         self.num_filters = cfg["recog_num_filters"]
         self.max_shift = cfg["recog_max_shift"]
         self.cuda = cfg["cuda"]
+        self.score_norm = cfg["score_normalization"]
         if self.cuda:
             self.device = torch.device('cuda')
         else:
@@ -111,6 +112,9 @@ class irisRecognition(object):
         
         self.softmax = nn.LogSoftmax(dim=1)
         self.input_transform = Compose([ToTensor(),])
+
+        avg_bits_by_filter_size = {5: 25056, 7: 24463, 9: 23764, 11: 23010, 13: 22225, 15: 21420, 17: 20603, 19: 19777, 21: 18945, 27: 16419, 33: 13864, 39: 11289}
+        self.avg_num_bits = avg_bits_by_filter_size[self.filter_size]
 
         # Misc
         self.se = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7))
@@ -465,10 +469,12 @@ class irisRecognition(object):
             xorCodes = np.logical_xor(code1, np.roll(code2, shift, axis=2))
             xorCodesMasked = np.logical_and(xorCodes, np.tile(np.expand_dims(andMasks,axis=0), (self.num_filters, 1, 1)))
             scoreC[:,shift] = np.sum(xorCodesMasked, axis=(1,2)) / np.sum(andMasks)
-        
+            if self.score_norm == "true":
+                scoreC[:,shift] = 0.5 - (0.5 - scoreC[:,shift]) * math.sqrt( np.sum(andMasks) / self.avg_num_bits )
         scoreMean = np.mean(scoreC, axis=0)
-        scoreC = np.min(scoreMean)
-        scoreC_shift = self.max_shift - np.argmin(scoreMean)
+        scoreC_index = np.argmin(scoreMean)
+        scoreC = scoreMean[scoreC_index]
+        scoreC_shift = self.max_shift - scoreC_index
         return scoreC, scoreC_shift
 
     def polar(self,x,y):
