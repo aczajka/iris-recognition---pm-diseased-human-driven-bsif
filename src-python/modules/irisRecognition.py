@@ -14,9 +14,7 @@ from torchvision import models
 from modules.network import *
 
 class irisRecognition(object):
-    def __init__(self, cfg, use_hough=True):
-        
-
+    def __init__(self, cfg, use_hough = False):
         # cParsing the config file
         self.use_hough = use_hough
         self.polar_height = cfg["polar_height"]
@@ -26,7 +24,7 @@ class irisRecognition(object):
         self.max_shift = cfg["recog_max_shift"]
         self.cuda = cfg["cuda"]
         self.score_norm = cfg["score_normalization"]
-        if self.cuda:
+        if self.cuda == "true":
             self.device = torch.device('cuda')
         else:
             self.device = torch.device('cpu')
@@ -45,7 +43,7 @@ class irisRecognition(object):
             self.torch_filter = torch.moveaxis(self.torch_filter.unsqueeze(0), 3, 0).detach().requires_grad_(False)
             #self.torch_filter_scipy = torch.FloatTensor(filter_mat_scipy).to(self.device)
             #self.torch_filter_scipy = torch.moveaxis(self.torch_filter_scipy.unsqueeze(0), 3, 0).detach().requires_grad_(False)
-        if self.use_hough == True:
+        if self.use_hough:
             self.iris_hough_param1 = cfg["iris_hough_param1"]
             self.iris_hough_param2 = cfg["iris_hough_param2"]
             self.iris_hough_margin = cfg["iris_hough_margin"]
@@ -96,7 +94,7 @@ class irisRecognition(object):
             self.model = UNet(self.CCNET_NUM_CLASSES, self.CCNET_NUM_CHANNELS)
             if self.ccnet_model_path:
                 try:
-                    if self.cuda:
+                    if self.cuda == "true":
                         self.model.load_state_dict(torch.load(self.ccnet_model_path, map_location=torch.device('cuda')))
                     else:
                         self.model.load_state_dict(torch.load(self.ccnet_model_path, map_location=torch.device('cpu')))
@@ -201,9 +199,9 @@ class irisRecognition(object):
 
 
     def circApprox(self,mask=None,image=None):
-        if self.use_hough and mask is None:
+        if self.use_hough and (mask is None):
             print('Please provide mask if you want to use hough transform')
-        if (not self.use_hough) and image is None:
+        if (not self.use_hough) and (image is None):
             print('Please provide image if you want to use the mccnet model') 
         if self.use_hough and (mask is not None):
             # Iris boundary approximation
@@ -451,7 +449,7 @@ class irisRecognition(object):
             if polar is None:
                 return None
             r = int(np.floor(self.filter_size / 2))
-            polar_t = torch.tensor(polar).float().unsqueeze(0).unsqueeze(0)
+            polar_t = torch.tensor(polar).float().unsqueeze(0).unsqueeze(0).to(self.device)
             #polar_t = (polar_t - polar_t.min()) / (polar_t.max() - polar_t.min())
             padded_polar = nn.functional.pad(polar_t, (r, r, 0, 0), mode='circular')
             codeContinuous = nn.functional.conv2d(padded_polar, self.torch_filter)

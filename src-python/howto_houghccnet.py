@@ -9,7 +9,7 @@ import numpy as np
 
 def main(cfg):
 
-    irisRec = irisRecognition(cfg)
+    irisRec = irisRecognition(cfg, use_hough=True)
 
     # Get the list of images to process
     filename_list = []
