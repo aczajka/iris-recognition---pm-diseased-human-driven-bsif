@@ -461,17 +461,16 @@ class irisRecognition(object):
         # Cutting off mask to (64-filter_size+1) x 512 and binarizing it.
         mask1_binary = np.where(mask1[r:-r, :] > 127, True, False) 
         mask2_binary = np.where(mask2[r:-r, :] > 127, True, False)
-        scoreC = np.zeros((self.num_filters, 2*self.max_shift+1))
+        scoreC = np.zeros((2*self.max_shift+1,))
         for shift in range(-self.max_shift, self.max_shift+1):
             andMasks = np.logical_and(mask1_binary, np.roll(mask2_binary, shift, axis=1))
             xorCodes = np.logical_xor(code1, np.roll(code2, shift, axis=2))
             xorCodesMasked = np.logical_and(xorCodes, np.tile(np.expand_dims(andMasks,axis=0), (self.num_filters, 1, 1)))
-            scoreC[:,shift] = np.sum(xorCodesMasked, axis=(1,2)) / np.sum(andMasks)
+            scoreC[shift] = np.mean(np.sum(xorCodesMasked, axis=(1,2)) / np.sum(andMasks))
             if self.score_norm == "true":
-                scoreC[:,shift] = 0.5 - (0.5 - scoreC[:,shift]) * math.sqrt( np.sum(andMasks) / self.avg_num_bits )
-        scoreMean = np.mean(scoreC, axis=0)
-        scoreC_index = np.argmin(scoreMean)
-        scoreC = scoreMean[scoreC_index]
+                scoreC[shift] = 0.5 - (0.5 - scoreC[shift]) * math.sqrt( np.sum(andMasks) / self.avg_num_bits )
+        scoreC_index = np.argmin(scoreC)
+        scoreC = scoreC[scoreC_index]
         scoreC_shift = self.max_shift - scoreC_index
         return scoreC, scoreC_shift
 
