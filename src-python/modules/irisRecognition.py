@@ -24,6 +24,7 @@ class irisRecognition(object):
         self.max_shift = cfg["recog_max_shift"]
         self.cuda = cfg["cuda"]
         self.score_norm = cfg["score_normalization"]
+        self.threshold_frac_avg_bits = cfg["threshold_frac_avg_bits"]
         if self.cuda == "true":
             self.device = torch.device('cuda')
         else:
@@ -461,6 +462,8 @@ class irisRecognition(object):
         # Cutting off mask to (64-filter_size+1) x 512 and binarizing it.
         mask1_binary = np.where(mask1[r:-r, :] > 127, True, False) 
         mask2_binary = np.where(mask2[r:-r, :] > 127, True, False)
+        if np.sum(mask1_binary) <= self.threshold_frac_avg_bits * self.avg_num_bits or np.sum(mask2_binary) <= self.threshold_frac_avg_bits * self.avg_num_bits:
+            return -1.0
         scoreC = np.zeros((2*self.max_shift+1,))
         for shift in range(-self.max_shift, self.max_shift+1):
             andMasks = np.logical_and(mask1_binary, np.roll(mask2_binary, shift, axis=1))
