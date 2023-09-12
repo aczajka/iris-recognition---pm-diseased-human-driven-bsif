@@ -452,7 +452,7 @@ class irisRecognition(object):
                 return None
             r = int(np.floor(self.filter_size / 2))
             polar_t = torch.tensor(polar).float().unsqueeze(0).unsqueeze(0)
-            polar_t = (polar_t - polar_t.min()) / (polar_t.max() - polar_t.min())
+            #polar_t = (polar_t - polar_t.min()) / (polar_t.max() - polar_t.min())
             padded_polar = nn.functional.pad(polar_t, (r, r, 0, 0), mode='circular')
             codeContinuous = nn.functional.conv2d(padded_polar, self.torch_filter)
             codeBinary = torch.where(codeContinuous.squeeze(0) > 0, True, False).cpu().numpy()
