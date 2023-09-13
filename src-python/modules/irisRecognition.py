@@ -178,7 +178,7 @@ class irisRecognition(object):
             return pred
         else:
             w,h = image.size
-            image = cv2.resize(np.array(image), self.NET_INPUT_SIZE, cv2.INTER_CUBIC)
+            image = cv2.resize(np.array(image), self.NET_INPUT_SIZE, cv2.INTER_LINEAR_EXACT)
             with torch.no_grad():
                 mask_logit_t = self.mask_model(Variable(self.input_transform_mask(image).unsqueeze(0).to(self.device)))[0]
                 mask_t = torch.where(torch.sigmoid(mask_logit_t) > 0.5, 255, 0)
@@ -190,7 +190,8 @@ class irisRecognition(object):
 
 
     def segmentVis(self,im,mask,pupil_xyr,iris_xyr):
-
+        pupil_xyr = np.around(pupil_xyr).astype(np.int32)
+        iris_xyr = np.around(iris_xyr).astype(np.int32)
         imVis = np.stack((np.array(im),)*3, axis=-1)
         imVis[:,:,1] = np.clip(imVis[:,:,1] + (96/255)*mask,0,255)
         imVis = cv2.circle(imVis, (pupil_xyr[0],pupil_xyr[1]), pupil_xyr[2], (0, 0, 255), 2)
@@ -243,19 +244,19 @@ class irisRecognition(object):
         elif (not self.use_hough) and (image is not None):
             w,h = image.size
 
-            image = cv2.resize(np.array(image), self.NET_INPUT_SIZE, cv2.INTER_CUBIC)
+            image = cv2.resize(np.array(image), self.NET_INPUT_SIZE, cv2.INTER_LINEAR_EXACT)
             with torch.no_grad():
                 inp_xyr_t = self.circle_model(Variable(self.input_transform_circ(image).unsqueeze(0).repeat(1,3,1,1).to(self.device)))
 
             #Circle params
             diag = math.sqrt(w**2 + h**2)
             inp_xyr = inp_xyr_t.tolist()[0]
-            pupil_x = int(inp_xyr[0] * w)
-            pupil_y = int(inp_xyr[1] * h)
-            pupil_r = int(inp_xyr[2] * 0.5 * 0.8 * diag)
-            iris_x = int(inp_xyr[3] * w)
-            iris_y = int(inp_xyr[4] * h)
-            iris_r = int(inp_xyr[5] * 0.5 * diag)
+            pupil_x = (inp_xyr[0] * w)
+            pupil_y = (inp_xyr[1] * h)
+            pupil_r = (inp_xyr[2] * 0.5 * 0.8 * diag)
+            iris_x = (inp_xyr[3] * w)
+            iris_y = (inp_xyr[4] * h)
+            iris_r = (inp_xyr[5] * 0.5 * diag)
 
             return np.array([pupil_x,pupil_y,pupil_r]), np.array([iris_x,iris_y,iris_r])
     
@@ -287,11 +288,11 @@ class irisRecognition(object):
             iris_xyr = torch.tensor(iris_xyr).unsqueeze(0).float().to(self.device)
             
             theta = (2*pi*torch.linspace(0,polar_width-1,polar_width)/polar_width).to(self.device)
-            pxCirclePoints = torch.round(pupil_xyr[:, 0].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device) #b x 512
-            pyCirclePoints = torch.round(pupil_xyr[:, 1].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device)  #b x 512
+            pxCirclePoints = (pupil_xyr[:, 0].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device) #b x 512
+            pyCirclePoints = (pupil_xyr[:, 1].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device)  #b x 512
             
-            ixCirclePoints = torch.round(iris_xyr[:, 0].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device)  #b x 512
-            iyCirclePoints = torch.round(iris_xyr[:, 1].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device) #b x 512
+            ixCirclePoints = (iris_xyr[:, 0].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device)  #b x 512
+            iyCirclePoints = (iris_xyr[:, 1].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device) #b x 512
 
             radius = (torch.linspace(1,polar_height,polar_height)/polar_height).reshape(-1, 1).to(self.device)  #64 x 1
             
@@ -462,14 +463,17 @@ class irisRecognition(object):
         # Cutting off mask to (64-filter_size+1) x 512 and binarizing it.
         mask1_binary = np.where(mask1[r:-r, :] > 127, True, False) 
         mask2_binary = np.where(mask2[r:-r, :] > 127, True, False)
-        if np.sum(mask1_binary) <= self.threshold_frac_avg_bits * self.avg_num_bits or np.sum(mask2_binary) <= self.threshold_frac_avg_bits * self.avg_num_bits:
+        if (np.sum(mask1_binary) <= 0.1 * self.avg_num_bits) or (np.sum(mask2_binary) <= 0.1 * self.avg_num_bits):
             return -1.0
         scoreC = np.zeros((2*self.max_shift+1,))
         for shift in range(-self.max_shift, self.max_shift+1):
             andMasks = np.logical_and(mask1_binary, np.roll(mask2_binary, shift, axis=1))
-            xorCodes = np.logical_xor(code1, np.roll(code2, shift, axis=2))
-            xorCodesMasked = np.logical_and(xorCodes, np.tile(np.expand_dims(andMasks,axis=0), (self.num_filters, 1, 1)))
-            scoreC[shift] = np.mean(np.sum(xorCodesMasked, axis=(1,2)) / np.sum(andMasks))
+            if np.sum(andMasks) == 0:
+                scoreC[shift] = float('inf')
+            else:
+                xorCodes = np.logical_xor(code1, np.roll(code2, shift, axis=2))
+                xorCodesMasked = np.logical_and(xorCodes, np.tile(np.expand_dims(andMasks,axis=0), (self.num_filters, 1, 1)))
+                scoreC[shift] = np.mean(np.sum(xorCodesMasked, axis=(1,2)) / np.sum(andMasks))
             if self.score_norm == "true":
                 scoreC[shift] = 0.5 - (0.5 - scoreC[shift]) * math.sqrt( np.sum(andMasks) / self.avg_num_bits )
         scoreC_index = np.argmin(scoreC)
