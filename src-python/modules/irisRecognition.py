@@ -262,7 +262,6 @@ class irisRecognition(object):
     
     # New Rubbersheet model-based Cartesian-to-polar transformation. It has support for bilinear interpolation
     def grid_sample(self, input, grid, interp_mode):  #helper function for new interpolation
-
         # grid: [-1, 1]
         N, C, H, W = input.shape
         gridx = grid[:, :, :, 0]
@@ -463,8 +462,8 @@ class irisRecognition(object):
         # Cutting off mask to (64-filter_size+1) x 512 and binarizing it.
         mask1_binary = np.where(mask1[r:-r, :] > 127, True, False) 
         mask2_binary = np.where(mask2[r:-r, :] > 127, True, False)
-        if (np.sum(mask1_binary) <= 0.1 * self.avg_num_bits) or (np.sum(mask2_binary) <= 0.1 * self.avg_num_bits):
-            return -1.0
+        if (np.sum(mask1_binary) <= self.threshold_frac_avg_bits * self.avg_num_bits) or (np.sum(mask2_binary) <= self.threshold_frac_avg_bits * self.avg_num_bits):
+            return -1.0, -1.0
         scoreC = np.zeros((2*self.max_shift+1,))
         for shift in range(-self.max_shift, self.max_shift+1):
             andMasks = np.logical_and(mask1_binary, np.roll(mask2_binary, shift, axis=1))
@@ -478,7 +477,10 @@ class irisRecognition(object):
                 scoreC[shift] = 0.5 - (0.5 - scoreC[shift]) * math.sqrt( np.sum(andMasks) / self.avg_num_bits )
         scoreC_index = np.argmin(scoreC)
         scoreC = scoreC[scoreC_index]
+        if scoreC == float('inf'):
+            return -1.0, -1.0
         scoreC_shift = self.max_shift - scoreC_index
+        
         return scoreC, scoreC_shift
 
     def polar(self,x,y):
