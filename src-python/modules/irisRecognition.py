@@ -30,7 +30,7 @@ def matchCodesGlobal(irisRecObj, code1, code2, mask1, mask2): #global function r
             xorCodes = np.logical_xor(code1, np.roll(code2, xshift, axis=2))
             xorCodesMasked = np.logical_and(xorCodes, np.tile(np.expand_dims(andMasks,axis=0), (irisRecObj.num_filters, 1, 1)))
             scoreC.append(np.sum(xorCodesMasked) / (np.sum(andMasks) * irisRecObj.num_filters))
-        if irisRecObj.score_norm == "true":
+        if irisRecObj.score_norm:
             scoreC[-1] = 0.5 - (0.5 - scoreC[-1]) * math.sqrt( np.sum(andMasks) / irisRecObj.avg_num_bits )
     scoreC_best = np.min(np.array(scoreC))
     if scoreC_best == float('inf'):
@@ -464,6 +464,9 @@ class irisRecognition(object):
                 codeBinary = torch.where(codeContinuous.squeeze(0) > 0, True, False).cpu().numpy()
                 codes.append(codeBinary) # The size of the code should be: 7 x (64 - filter_size) x 512
         return codes
+    
+    def majorityVoteCodes(self, codes):
+
     
     def matchCodes(self, code1, code2, mask1, mask2):
         r = int(np.floor(self.filter_size / 2))
