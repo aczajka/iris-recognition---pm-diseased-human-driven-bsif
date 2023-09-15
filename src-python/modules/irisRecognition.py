@@ -465,9 +465,6 @@ class irisRecognition(object):
                 codes.append(codeBinary) # The size of the code should be: 7 x (64 - filter_size) x 512
         return codes
     
-    def majorityVoteCodes(self, codes):
-
-    
     def matchCodes(self, code1, code2, mask1, mask2):
         r = int(np.floor(self.filter_size / 2))
         # Cutting off mask to (64-filter_size+1) x 512 and binarizing it.
