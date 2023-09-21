@@ -138,7 +138,7 @@ class irisRecognition(object):
         avg_bits_by_filter_size = {5: 25056, 7: 24463, 9: 23764, 11: 23010, 13: 22225, 15: 21420, 17: 20603, 19: 19777, 21: 18945, 27: 16419, 33: 13864, 39: 11289}
         self.avg_num_bits = avg_bits_by_filter_size[self.filter_size]
         self.ISO_RES = (640,480)
-        self.multiproc = cfg["use_multiprocessing"]
+        self.multiproc = cfg["use_multiprocessing_jitter"]
         self.num_workers = cfg["num_workers"]
 
     # converts non-ISO images into ISO dimensions
@@ -363,24 +363,37 @@ class irisRecognition(object):
                         for iyj in range(-self.jitter, self.jitter+1):
                             for mxj in range(-self.jitter, self.jitter+1):
                                 for myj in range(-self.jitter, self.jitter+1):
-                                    mask = torch.roll(mask, mxj, dims=3)
-                                    mask = torch.roll(mask, myj, dims=2)
+                                    
+                                    mask_jitter = mask.clone().detach()
+
+                                    mask_jitter = torch.roll(mask_jitter, mxj, dims=3)
+
+                                    if mxj > 0:
+                                        mask_jitter[:,:,:,:mxj] = 0.0
+                                    elif mxj < 0:
+                                        mask_jitter[:,:,:,mxj:] = 0.0
+
+                                    mask_jitter = torch.roll(mask_jitter, myj, dims=2)
+                                    
                                     if myj > 0:
-                                        mask[:,:,:myj,:] = 0.0
+                                        mask_jitter[:,:,:myj,:] = 0.0
                                     elif myj < 0:
-                                        mask[:,:,myj:,:] = 0.0
+                                        mask_jitter[:,:,myj:,:] = 0.0
                                     
-                                    pupil_xyr[:, 0] += pxj
-                                    pupil_xyr[:, 1] += pyj
+                                    pxyr_jitter = pupil_xyr.clone().detach()
+                                    ixyr_jitter = iris_xyr.clone().detach()
+
+                                    pxyr_jitter[:, 0] += pxj
+                                    pxyr_jitter[:, 1] += pyj
                                     
-                                    iris_xyr[:, 0] += ixj
-                                    pupil_xyr[:, 1] += iyj
+                                    ixyr_jitter[:, 0] += ixj
+                                    ixyr_jitter[:, 1] += iyj
                                     
-                                    pxCirclePoints = (pupil_xyr[:, 0].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device) #b x 512
-                                    pyCirclePoints = (pupil_xyr[:, 1].reshape(-1, 1) + pupil_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device)  #b x 512
+                                    pxCirclePoints = (pxyr_jitter[:, 0].reshape(-1, 1) + pxyr_jitter[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device) #b x 512
+                                    pyCirclePoints = (pxyr_jitter[:, 1].reshape(-1, 1) + pxyr_jitter[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device)  #b x 512
                                     
-                                    ixCirclePoints = (iris_xyr[:, 0].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device)  #b x 512
-                                    iyCirclePoints = (iris_xyr[:, 1].reshape(-1, 1) + iris_xyr[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device) #b x 512
+                                    ixCirclePoints = (ixyr_jitter[:, 0].reshape(-1, 1) + ixyr_jitter[:, 2].reshape(-1, 1) @ torch.cos(theta).reshape(1, polar_width)).to(self.device)  #b x 512
+                                    iyCirclePoints = (ixyr_jitter[:, 1].reshape(-1, 1) + ixyr_jitter[:, 2].reshape(-1, 1) @ torch.sin(theta).reshape(1, polar_width)).to(self.device) #b x 512
                                     
                                     pxCoords = torch.matmul((1-radius), pxCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
                                     pyCoords = torch.matmul((1-radius), pyCirclePoints.reshape(-1, 1, polar_width)) # b x 64 x 512
@@ -398,7 +411,7 @@ class irisRecognition(object):
 
                                     image_polar = self.grid_sample(image, grid_sample_mat, interp_mode=interpolation)
                                     image_polar = torch.clamp(torch.round(image_polar), min=0, max=255)
-                                    mask_polar = self.grid_sample(mask, grid_sample_mat, interp_mode='nearest') # always use nearest neighbor interpolation for mask
+                                    mask_polar = self.grid_sample(mask_jitter, grid_sample_mat, interp_mode='nearest') # always use nearest neighbor interpolation for mask
                                     mask_polar = (mask_polar>0.5).long() * 255
                                     
                                     images_polar.append(image_polar[0][0].cpu().numpy().astype(np.uint8))
@@ -452,25 +465,44 @@ class irisRecognition(object):
     
     def extractMultipleCodes(self, polars):
         with torch.no_grad():
-            codes = []
+            polars_t = []
             for polar in polars:
                 if polar is None:
+                    print("One of the polar images is None. Unable to continue...")
                     return None
                 r = int(np.floor(self.filter_size / 2))
                 polar_t = torch.tensor(polar).float().unsqueeze(0).unsqueeze(0).to(self.device)
-                #polar_t = (polar_t - polar_t.min()) / (polar_t.max() - polar_t.min())
-                padded_polar = nn.functional.pad(polar_t, (r, r, 0, 0), mode='circular')
-                codeContinuous = nn.functional.conv2d(padded_polar, self.torch_filter)
-                codeBinary = torch.where(codeContinuous.squeeze(0) > 0, True, False).cpu().numpy()
-                codes.append(codeBinary) # The size of the code should be: 7 x (64 - filter_size) x 512
+                polars_t.append(polar_t)
+            polars_t = torch.cat(polars_t, 0)
+            padded_polar = nn.functional.pad(polars_t, (r, r, 0, 0), mode='circular')
+            codesContinuous = nn.functional.conv2d(padded_polar, self.torch_filter)
+            codesBinary = torch.where(codesContinuous > 0, True, False).cpu().numpy()
+            codes = []
+            for i in range(codesBinary.shape[0]):
+                codes.append(codesBinary[i]) # The size of the code should be: 7 x (64 - filter_size) x 512
         return codes
-    
+
+    def findMajorityVoteCode(self, codes, masks_polar):
+        masked_codes = []
+        masks_polar_binary = []
+        r = int(np.floor(self.filter_size / 2))
+        for code, mask_polar in zip(codes, masks_polar):
+            mask_polar_binary = np.where(mask_polar > 127, True, False)
+            masks_polar_binary.append(mask_polar_binary.astype(int))
+            masked_codes.append(np.logical_and(code, mask_polar_binary[r:-r, :]).astype(int))
+        masked_codes_sum = sum(masked_codes)
+        masks_polar_sum = sum(masks_polar_binary)
+        majorityVoteCode = np.where(masked_codes_sum > (masks_polar_sum[r:-r, :] * 0.5), True, False)
+        mask_polar = np.where(masks_polar_sum > (len(masks_polar_binary)/2.0), 255, 0)
+        return majorityVoteCode, mask_polar.astype(np.uint8)
+
     def matchCodes(self, code1, code2, mask1, mask2):
         r = int(np.floor(self.filter_size / 2))
         # Cutting off mask to (64-filter_size+1) x 512 and binarizing it.
-        mask1_binary = np.where(mask1[r:-r, :] > 127, True, False) 
+        mask1_binary = np.where(mask1[r:-r, :] > 127, True, False)
         mask2_binary = np.where(mask2[r:-r, :] > 127, True, False)
         if (np.sum(mask1_binary) <= self.threshold_frac_avg_bits * self.avg_num_bits) or (np.sum(mask2_binary) <= self.threshold_frac_avg_bits * self.avg_num_bits):
+            print("Too small masks")
             return -1.0, -1.0
         scoreC = []
         for xshift in range(-self.max_shift, self.max_shift+1):
@@ -486,8 +518,9 @@ class irisRecognition(object):
         scoreC_index = np.argmin(np.array(scoreC))
         scoreC_best = scoreC[scoreC_index]
         if scoreC_best == float('inf'):
+            print("Too small overlap between masks")
             return -1.0, -1.0
-        scoreC_shift = self.max_shift - scoreC_index
+        scoreC_shift = scoreC_index - self.max_shift
         
         return scoreC_best, scoreC_shift
     
@@ -540,7 +573,7 @@ class irisRecognition(object):
             return -1.0, -1.0
         
         shift_divide = int(round(self.max_shift/8)) * 2 + 1
-        scoreC_shift = self.max_shift - int(scoreC_index / shift_divide)
+        scoreC_shift = int(scoreC_index / shift_divide) - self.max_shift
 
         return scoreC_best, scoreC_shift
     

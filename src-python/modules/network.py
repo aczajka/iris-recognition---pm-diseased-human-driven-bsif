@@ -255,14 +255,12 @@ class fclayer(nn.Module):
         self.in_w = in_w
         self.out_n = out_n
         self.fc_list = []
-        for i in range(out_n):
-            self.fc_list.append(nn.Linear(in_h*in_w, 1))
-        self.fc_list = nn.ModuleList(self.fc_list)
+        self.fc_list = nn.ModuleList(nn.Linear(in_h*in_w, 1) for i in range(out_n))
     def forward(self, x):
-        x = x.reshape(-1, 6, self.in_h, self.in_w)
+        x = x.reshape(-1, self.out_n, self.in_h, self.in_w)
         outs = []
-        for i in range(self.out_n):
-            outs.append(self.fc_list[i](x[:, i, :, :].reshape(-1, self.in_h*self.in_w)))
+        for i, fc_layer in enumerate(self.fc_list):
+            outs.append(fc_layer(x[:, i, :, :].reshape(-1, self.in_h*self.in_w)))
         out = torch.cat(outs, 1)
         return out
 

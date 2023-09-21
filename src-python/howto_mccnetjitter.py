@@ -48,7 +48,7 @@ def main(cfg):
     for codes1,masks1,fn1,i in zip(codes_list,polar_masks_list,filename_list,range(len(codes_list))):
         for codes2,masks2,fn2,j in zip(codes_list,polar_masks_list,filename_list,range(len(codes_list))):
             if i < j:
-                score = irisRec.matchCodesJitter(codes1, codes2[0], masks1, masks2[0])
+                score = irisRec.matchCodesJitter(codes1, codes2[int((len(codes2)-1)/2)], masks1, masks2[int((len(codes2)-1)/2)])
                 print("{} <-> {} : {:.3f}".format(fn1,fn2,score))
      
     return None
