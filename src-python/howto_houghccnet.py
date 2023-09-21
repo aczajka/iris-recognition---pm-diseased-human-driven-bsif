@@ -26,6 +26,9 @@ def main(cfg):
         
         print(fn)
 
+        # convert to ISO-compliant aspect ratio (4:3) and resize to ISO-compliant resolution: 640x480
+        im = irisRec.fix_image(im)
+
         # segmentation mask: 
         mask = irisRec.segment(im)
         im_mask = Image.fromarray(mask)
