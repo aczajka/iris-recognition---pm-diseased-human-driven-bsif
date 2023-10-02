@@ -49,7 +49,7 @@ The Warsaw datasets of post-mortem iris images (acquired from 79 cadavers in tot
 If you have problems with the `.mat` and `.pth` files:
 
 * use `git-lfs clone` instead of `git clone`, OR
-* download the [models and filters from this Google Drive location](https://drive.google.com/drive/folders/1pyifeABdRUQZWfjMEB0f0ye8h1K2qNDO?usp=sharing)
+* download the [models and filters from this Google Drive location](https://notredame.box.com/v/hdbif-weights-and-filters)
 
 # License
 
