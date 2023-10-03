@@ -18,9 +18,9 @@ def main(cfg):
     image_list = []
 
     for fn in filename_list:
-        im = Image.open("../data/" + fn)
+        im = Image.fromarray(np.array(Image.open("../data/" + fn).convert("RGB"))[:, :, 0], "L")
         image_list.append(im)
-    
+        
     # Segmentation, normalization and encoding
     polar_mask_list = []
     code_list = []

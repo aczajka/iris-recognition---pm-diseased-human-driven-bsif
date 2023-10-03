@@ -17,7 +17,7 @@ def main(cfg):
     extensions = ["bmp", "png", "gif", "jpg", "jpeg", "tiff", "tif"]
     for ext in extensions:
         for filename in glob.glob("../data/*." + ext):
-            im = Image.open(filename)
+            im = Image.fromarray(np.array(Image.open(filename).convert("RGB"))[:, :, 0], "L")
             image_list.append(im)
             filename_list.append(os.path.basename(filename))
 
