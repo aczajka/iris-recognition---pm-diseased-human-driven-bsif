@@ -141,6 +141,10 @@ class irisRecognition(object):
         self.multiproc = cfg["use_multiprocessing_jitter"]
         self.num_workers = cfg["num_workers"]
 
+        self.se = np.ones((3, 3), dtype="uint8")
+        self.sk = np.ones((3, 3), dtype="uint8")
+        self.clahe = cv2.createCLAHE(clipLimit=5)
+
     # converts non-ISO images into ISO dimensions
     def fix_image(self, image):
         w, h = image.size
