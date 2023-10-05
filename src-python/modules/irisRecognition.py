@@ -150,7 +150,7 @@ class irisRecognition(object):
         w, h = image.size
         aspect_ratio = float(w)/float(h)
         if aspect_ratio >= 1.333 and aspect_ratio <= 1.334:
-            result_im = image.resize(self.ISO_RES)
+            result_im = image.copy().resize(self.ISO_RES)
         elif aspect_ratio < 1.333:
             w_new = h * (4.0/3.0)
             w_pad = (w_new - w) / 2
