@@ -46,7 +46,7 @@ The Warsaw datasets of post-mortem iris images (acquired from 79 cadavers in tot
 
 # Getting the model weights and ICA filters
 
-[Models and filters from this Google Drive location](https://notredame.box.com/v/hdbif-weights-and-filters)
+[Models and filters can be downloaded from this Google Drive location](https://notredame.box.com/v/hdbif-weights-and-filters)
 
 # License
 
