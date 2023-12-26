@@ -44,12 +44,9 @@ The python version has an updated pupil and iris circle estimator based on a mod
 
 The Warsaw datasets of post-mortem iris images (acquired from 79 cadavers in total) can be requested at http://zbum.ia.pw.edu.pl/EN/node/46. Warsaw post-mortem iris datasets are freely available for non-commercial purposes to all interested researchers.
 
-# Troubleshooting
+# Getting the model weights and ICA filters
 
-If you have problems with the `.mat` and `.pth` files:
-
-* use `git-lfs clone` instead of `git clone`, OR
-* download the [models and filters from this Google Drive location](https://notredame.box.com/v/hdbif-weights-and-filters)
+[Models and filters from this Google Drive location](https://notredame.box.com/v/hdbif-weights-and-filters)
 
 # License
 
