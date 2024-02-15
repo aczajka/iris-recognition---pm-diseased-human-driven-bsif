@@ -30,7 +30,7 @@ def matchCodesGlobal(irisRecObj, code1, code2, mask1, mask2): #global function r
             xorCodes = np.logical_xor(code1, np.roll(code2, xshift, axis=2))
             xorCodesMasked = np.logical_and(xorCodes, np.tile(np.expand_dims(andMasks,axis=0), (irisRecObj.num_filters, 1, 1)))
             scoreC.append(np.sum(xorCodesMasked) / (np.sum(andMasks) * irisRecObj.num_filters))
-        if irisRecObj.score_norm:
+        if irisRecObj.score_norm and scoreC[-1] != float('inf'):
             scoreC[-1] = 0.5 - (0.5 - scoreC[-1]) * math.sqrt( np.sum(andMasks) / irisRecObj.avg_num_bits )
     scoreC_best = np.min(np.array(scoreC))
     if scoreC_best == float('inf'):
@@ -517,14 +517,63 @@ class irisRecognition(object):
                 xorCodes = np.logical_xor(code1, np.roll(code2, xshift, axis=2))
                 xorCodesMasked = np.logical_and(xorCodes, np.tile(np.expand_dims(andMasks,axis=0), (self.num_filters, 1, 1)))
                 scoreC.append(np.sum(xorCodesMasked) / (np.sum(andMasks) * self.num_filters))
-            if self.score_norm:
+            if self.score_norm and scoreC[-1] != float('inf'):
                 scoreC[-1] = 0.5 - (0.5 - scoreC[-1]) * math.sqrt( np.sum(andMasks) / self.avg_num_bits )
         scoreC_index = np.argmin(np.array(scoreC))
         scoreC_best = scoreC[scoreC_index]
         if scoreC_best == float('inf'):
             print("Too small overlap between masks")
             return -1.0, -1.0
-        scoreC_shift = scoreC_index - self.max_shift
+                
+        return scoreC_best, scoreC_index - self.max_shift
+
+    def matchCodesEfficient(self, code1, code2, mask1, mask2):
+        r = int(np.floor(self.filter_size / 2))
+        # Cutting off mask to (64-filter_size+1) x 512 and binarizing it.
+        mask1_binary = np.where(mask1[r:-r, :] > 127, True, False)
+        mask2_binary = np.where(mask2[r:-r, :] > 127, True, False)
+        if (np.sum(mask1_binary) <= self.threshold_frac_avg_bits * self.avg_num_bits) or (np.sum(mask2_binary) <= self.threshold_frac_avg_bits * self.avg_num_bits):
+            print("Too small masks")
+            return -1.0, -1.0
+        scoreC = []
+        for xshift in range(-self.max_shift, self.max_shift+1, 2):
+            andMasks = np.logical_and(mask1_binary, np.roll(mask2_binary, xshift, axis=1))
+            if np.sum(andMasks) == 0:
+                scoreC.append(float('inf'))
+            else:
+                xorCodes = np.logical_xor(code1, np.roll(code2, xshift, axis=2))
+                xorCodesMasked = np.logical_and(xorCodes, np.tile(np.expand_dims(andMasks,axis=0), (self.num_filters, 1, 1)))
+                scoreC.append(np.sum(xorCodesMasked) / (np.sum(andMasks) * self.num_filters))
+            if self.score_norm and scoreC[-1] != float('inf'):
+                scoreC[-1] = 0.5 - (0.5 - scoreC[-1]) * math.sqrt( np.sum(andMasks) / self.avg_num_bits )
+        scoreC_index = np.argmin(np.array(scoreC))
+        scoreC_shift = scoreC_index * 2 - self.max_shift
+        scoreC = scoreC[scoreC_index]
+        if scoreC == float('inf'):
+            print("Too small overlap between masks")
+            return -1.0, -1.0
+        
+        andMasks_left = np.logical_and(mask1_binary, np.roll(mask2_binary, scoreC_shift-1, axis=1))
+        if np.sum(andMasks_left) == 0:
+            scoreC_left = float('inf')
+        else:
+            xorCodes_left = np.logical_xor(code1, np.roll(code2, scoreC_shift-1, axis=2))
+            xorCodesMasked_left = np.logical_and(xorCodes_left, np.tile(np.expand_dims(andMasks_left,axis=0), (self.num_filters, 1, 1)))
+            scoreC_left = np.sum(xorCodesMasked_left) / (np.sum(andMasks_left) * self.num_filters)
+        
+        andMasks_right = np.logical_and(mask1_binary, np.roll(mask2_binary, scoreC_shift+1, axis=1))
+        if np.sum(andMasks_right) == 0:
+            scoreC_right = float('inf')
+        else:
+            xorCodes_right = np.logical_xor(code1, np.roll(code2, scoreC_shift+1, axis=2))
+            xorCodesMasked_right = np.logical_and(xorCodes_right, np.tile(np.expand_dims(andMasks_right,axis=0), (self.num_filters, 1, 1)))
+            scoreC_right = np.sum(xorCodesMasked_right) / (np.sum(andMasks_right) * self.num_filters)
+        
+        scoreC_best = min(scoreC, scoreC_left, scoreC_right)
+        if scoreC_best == scoreC_left:
+            scoreC_shift -= 1
+        elif scoreC_best == scoreC_right:
+            scoreC_shift += 1
         
         return scoreC_best, scoreC_shift
     
@@ -569,7 +618,7 @@ class irisRecognition(object):
                     xorCodes = np.logical_xor(code1, np.roll(np.roll(code2, xshift, axis=2), ytrans, axis=1))
                     xorCodesMasked = np.logical_and(xorCodes, np.tile(np.expand_dims(andMasks,axis=0), (self.num_filters, 1, 1)))
                     scoreC.append(np.sum(xorCodesMasked) / (np.sum(andMasks) * self.num_filters))
-                if self.score_norm:
+                if self.score_norm and scoreC[-1] != float('inf'):
                     scoreC[-1] = 0.5 - (0.5 - scoreC[-1]) * math.sqrt( np.sum(andMasks) / self.avg_num_bits )
         scoreC_index = np.argmin(np.array(scoreC))
         scoreC_best = scoreC[scoreC_index]
